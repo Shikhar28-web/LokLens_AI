@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "scrapy-mcp": {
+      "command": "uvx",
+      "args": [
+        "--from",
+        "scrapy-mcp-official",
+        "scrapy-mcp"
+      ]
+    }
+  }
+}

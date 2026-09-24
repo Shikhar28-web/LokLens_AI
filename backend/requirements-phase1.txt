@@ -1,0 +1,18 @@
+# ── Web framework ──────────────────────────────────────────────────────────────
+fastapi>=0.111.0
+uvicorn[standard]>=0.29.0
+python-multipart>=0.0.9
+
+# ── Data validation (flexible pins for Python 3.13 pre-built wheel compatibility)
+pydantic>=2.7
+pydantic-settings>=2.2
+
+# ── Database ───────────────────────────────────────────────────────────────────
+sqlalchemy>=2.0.30
+alembic>=1.13
+aiosqlite>=0.20
+
+# Testing (core subset — no heavy ML deps needed for Phase 1)
+httpx>=0.27
+pytest>=8.2
+pytest-asyncio>=0.23

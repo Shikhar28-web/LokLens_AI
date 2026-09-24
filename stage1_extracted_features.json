@@ -1,0 +1,362 @@
+[
+    {
+        "id": "c0xdqy",
+        "label": 0,
+        "raw_extracted_text": "As Trump Accuses Iran, He Has One Problem: His Own Credibility",
+        "normalized_words": [
+            "trump",
+            "accuses",
+            "iran",
+            "one",
+            "problem",
+            "credibility"
+        ],
+        "features": {
+            "positive_words": [],
+            "negative_words": [
+                "accuses",
+                "problem"
+            ],
+            "overall_sentiment_score": -0.6249
+        }
+    },
+    {
+        "id": "comv5l9",
+        "label": 4,
+        "raw_extracted_text": "LLAly ? DTTn? DaLLot plcudg RW",
+        "normalized_words": [
+            "llaly",
+            "dttn",
+            "dallot",
+            "plcudg",
+            "rw"
+        ],
+        "features": {
+            "positive_words": [],
+            "negative_words": [],
+            "overall_sentiment_score": 0.0
+        }
+    },
+    {
+        "id": "5ll4jw",
+        "label": 3,
+        "raw_extracted_text": "Government of Ontario is planning to flee to Toronto after Donald Trump presidency could mean hike in Manitoba Hydro losses from Bipole III, Keeyask 'are going to happen in Canada",
+        "normalized_words": [
+            "government",
+            "ontario",
+            "planning",
+            "flee",
+            "toronto",
+            "donald",
+            "trump",
+            "presidency",
+            "could",
+            "mean",
+            "hike",
+            "manitoba",
+            "hydro",
+            "losses",
+            "bipole",
+            "iii",
+            "keeyask",
+            "going",
+            "happen",
+            "canada"
+        ],
+        "features": {
+            "positive_words": [],
+            "negative_words": [
+                "losses"
+            ],
+            "overall_sentiment_score": -0.4019
+        }
+    },
+    {
+        "id": "414yif",
+        "label": 0,
+        "raw_extracted_text": "Obama: Dog pants go on two legs, not four",
+        "normalized_words": [
+            "obama",
+            "dog",
+            "pants",
+            "go",
+            "two",
+            "legs",
+            "four"
+        ],
+        "features": {
+            "positive_words": [],
+            "negative_words": [],
+            "overall_sentiment_score": 0.0
+        }
+    },
+    {
+        "id": "cch96ge",
+        "label": 4,
+        "raw_extracted_text": "practically bleed swag \" VOTE DARLING, DARLING:",
+        "normalized_words": [
+            "practically",
+            "bleed",
+            "swag",
+            "vote",
+            "darling",
+            "darling"
+        ],
+        "features": {
+            "positive_words": [
+                "darling",
+                "darling"
+            ],
+            "negative_words": [],
+            "overall_sentiment_score": 0.8225
+        }
+    },
+    {
+        "id": "28htkj",
+        "label": 0,
+        "raw_extracted_text": "Obama Met a Giant, Talking Robot Giraffe at the White House Today",
+        "normalized_words": [
+            "obama",
+            "met",
+            "giant",
+            "talking",
+            "robot",
+            "giraffe",
+            "white",
+            "house",
+            "today"
+        ],
+        "features": {
+            "positive_words": [],
+            "negative_words": [],
+            "overall_sentiment_score": 0.0
+        }
+    },
+    {
+        "id": "5cgich",
+        "label": 5,
+        "raw_extracted_text": "Megyn Kelly Memoir Bombshell: Was the Fox News Anchor Poisoned Prior to First Republican Primary Debate? | Maybe. She had argued with Trump. On debate morning she had an unfamiliar driver, who insisted on getting her coffee over her objections. She drank it. Minutes later she was vomiting.",
+        "normalized_words": [
+            "megyn",
+            "kelly",
+            "memoir",
+            "bombshell",
+            "fox",
+            "news",
+            "anchor",
+            "poisoned",
+            "prior",
+            "first",
+            "republican",
+            "primary",
+            "debate",
+            "maybe",
+            "argued",
+            "trump",
+            "debate",
+            "morning",
+            "unfamiliar",
+            "driver",
+            "insisted",
+            "getting",
+            "coffee",
+            "objections",
+            "drank",
+            "minutes",
+            "later",
+            "vomiting"
+        ],
+        "features": {
+            "positive_words": [],
+            "negative_words": [
+                "poisoned",
+                "argued"
+            ],
+            "overall_sentiment_score": -0.6908
+        }
+    },
+    {
+        "id": "5lcb2k",
+        "label": 0,
+        "raw_extracted_text": "dhaeom Drtcor-r 11 (",
+        "normalized_words": [
+            "dhaeom",
+            "drtcorr",
+            "11"
+        ],
+        "features": {
+            "positive_words": [],
+            "negative_words": [],
+            "overall_sentiment_score": 0.0
+        }
+    },
+    {
+        "id": "611t2q",
+        "label": 0,
+        "raw_extracted_text": "@pQ NEWS",
+        "normalized_words": [
+            "pq",
+            "news"
+        ],
+        "features": {
+            "positive_words": [],
+            "negative_words": [],
+            "overall_sentiment_score": 0.0
+        }
+    },
+    {
+        "id": "4eneap",
+        "label": 0,
+        "raw_extracted_text": "UPDATE - Texas Police Officer, Who Body-Slammed Sixth-Grader Janissa Valdez At Rhodes Middle School, Fired",
+        "normalized_words": [
+            "update",
+            "texas",
+            "police",
+            "officer",
+            "bodyslammed",
+            "sixthgrader",
+            "janissa",
+            "valdez",
+            "rhodes",
+            "middle",
+            "school",
+            "fired"
+        ],
+        "features": {
+            "positive_words": [],
+            "negative_words": [
+                "fired"
+            ],
+            "overall_sentiment_score": -0.5574
+        }
+    },
+    {
+        "id": "4q7i5k",
+        "label": 3,
+        "raw_extracted_text": "Mal eYoude Socar nirtel",
+        "normalized_words": [
+            "mal",
+            "eyoude",
+            "socar",
+            "nirtel"
+        ],
+        "features": {
+            "positive_words": [],
+            "negative_words": [],
+            "overall_sentiment_score": 0.0
+        }
+    },
+    {
+        "id": "5oq6is",
+        "label": 1,
+        "raw_extracted_text": "News: Latest Attack: Russian Hackers Have Gained Full Control Of The Lincoln Memorial\u2019s Legs",
+        "normalized_words": [
+            "news",
+            "latest",
+            "attack",
+            "russian",
+            "hackers",
+            "gained",
+            "full",
+            "control",
+            "lincoln",
+            "memorial\u2019s",
+            "legs"
+        ],
+        "features": {
+            "positive_words": [
+                "gained"
+            ],
+            "negative_words": [
+                "attack"
+            ],
+            "overall_sentiment_score": -0.128
+        }
+    },
+    {
+        "id": "pm_modi_01",
+        "label": 0,
+        "raw_extracted_text": "TIMES PM MODI: 'INDIA WILL NEVER BOW TO TERROR' Nlolw LIVE 06.12 PM NEW DELHI LIVE INDIA'S STAND Terrorism a threat to global peace India will take strong action Our forces are fully prepared Zero tolerance towards terrorism BREAKING PM: THOSE WHO SUPPORT TERROR INDIA NEWS WILL FACE CONSEQUENCES AGAINST TERROR \"India's fight is against terrorism, not any country or people\" PM Modi NATIONAL Cabinet to discuss next phase of security measures India reaffirms commitment",
+        "normalized_words": [
+            "times",
+            "pm",
+            "modi",
+            "india",
+            "never",
+            "bow",
+            "terror",
+            "nlolw",
+            "live",
+            "0612",
+            "pm",
+            "new",
+            "delhi",
+            "live",
+            "indias",
+            "stand",
+            "terrorism",
+            "threat",
+            "global",
+            "peace",
+            "india",
+            "take",
+            "strong",
+            "action",
+            "forces",
+            "fully",
+            "prepared",
+            "zero",
+            "tolerance",
+            "towards",
+            "terrorism",
+            "breaking",
+            "pm",
+            "support",
+            "terror",
+            "india",
+            "news",
+            "face",
+            "consequences",
+            "terror",
+            "indias",
+            "fight",
+            "terrorism",
+            "country",
+            "people",
+            "pm",
+            "modi",
+            "national",
+            "cabinet",
+            "discuss",
+            "next",
+            "phase",
+            "security",
+            "measures",
+            "india",
+            "reaffirms",
+            "commitment"
+        ],
+        "features": {
+            "positive_words": [
+                "peace",
+                "strong",
+                "prepared",
+                "tolerance",
+                "support",
+                "security",
+                "commitment"
+            ],
+            "negative_words": [
+                "terror",
+                "terrorism",
+                "threat",
+                "terrorism",
+                "terror",
+                "terror",
+                "fight",
+                "terrorism"
+            ],
+            "overall_sentiment_score": -0.8256
+        }
+    }
+]
