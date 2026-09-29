@@ -139,77 +139,16 @@ async def analyze_submission(
         )
 
     submission.status = "processing"
-    await db.flush()
+    await db.commit()
 
     # Background task: runs after the response is sent, with its own DB session
-    async def _run_pipeline(sub_id: str) -> None:
-        """
-        Phase 1 stub — marks the submission complete with a placeholder verdict.
-        Replaced by the real pipeline in Phase 2+.
-        """
-        import asyncio
+    async def _run_pipeline_wrapper(sub_id: str) -> None:
         from app.database import AsyncSessionLocal
-        from app.models.verdict import Verdict
-
-        logger.info("Pipeline stub running for submission %s", sub_id)
-        await asyncio.sleep(3)  # Simulate brief processing time
-
+        from app.services.pipeline import run_pipeline
         async with AsyncSessionLocal() as session:
-            try:
-                result = await session.execute(
-                    select(Submission).where(Submission.id == sub_id)
-                )
-                sub = result.scalar_one_or_none()
-                if not sub:
-                    return
+            await run_pipeline(sub_id, session)
 
-                sub.status = "complete"
-                from datetime import datetime, timezone
-                sub.completed_at = datetime.now(timezone.utc)
-
-                # Write a stub verdict so /report returns 200 instead of 425
-                stub_verdict = Verdict(
-                    submission_id=sub_id,
-                    claim_verdict="INSUFFICIENT_EVIDENCE",
-                    claim_confidence=0.0,
-                    image_verdict="INCONCLUSIVE" if sub.input_type in ("image", "multimodal") else None,
-                    image_confidence=0.0 if sub.input_type in ("image", "multimodal") else None,
-                    overall_status="PIPELINE_STUB",
-                    independent_source_count=0,
-                    explanation_json={
-                        "summary": (
-                            "This is a Phase 1 stub verdict. The full NLP pipeline "
-                            "(claim extraction, web search, evidence retrieval, forensics) "
-                            "will be implemented in Phases 2–16. No real analysis was performed."
-                        )
-                    },
-                    limitations_json=[
-                        "Phase 1 stub — NLP pipeline not yet implemented.",
-                        "No web search or evidence retrieval performed.",
-                        "No image forensics performed.",
-                    ],
-                    score_components_json={"phase": 1, "status": "stub"},
-                )
-                session.add(stub_verdict)
-                await session.commit()
-                logger.info("Submission %s marked complete (stub verdict)", sub_id)
-            except Exception as exc:
-                logger.exception("Pipeline stub failed for %s: %s", sub_id, exc)
-                await session.rollback()
-                # Mark as error so frontend stops polling
-                try:
-                    result = await session.execute(
-                        select(Submission).where(Submission.id == sub_id)
-                    )
-                    sub = result.scalar_one_or_none()
-                    if sub:
-                        sub.status = "error"
-                        sub.error_message = str(exc)
-                        await session.commit()
-                except Exception:
-                    pass
-
-    background_tasks.add_task(_run_pipeline, submission_id)
+    background_tasks.add_task(_run_pipeline_wrapper, submission_id)
     return submission
 
 
@@ -267,8 +206,16 @@ async def list_sources(
 ) -> List[Source]:
     """Returns deduplicated sources retrieved for this submission."""
     await _get_submission_or_404(submission_id, db)
-    # TODO: Phase 3+ will populate these via search pipeline
-    return []
+    
+    from app.models.document import Document
+    result = await db.execute(
+        select(Source).distinct()
+        .join(Document, Source.id == Document.source_id)
+        .join(Evidence, Document.id == Evidence.document_id)
+        .join(Claim, Evidence.claim_id == Claim.id)
+        .where(Claim.submission_id == submission_id)
+    )
+    return list(result.scalars().all())
 
 
 # ── Full report ────────────────────────────────────────────────────────────────
@@ -296,6 +243,12 @@ async def get_report(
         select(Claim).where(Claim.submission_id == submission_id)
     )
     claims = list(claims_result.scalars().all())
+    
+    evidence_list = await list_evidence(submission_id, db)
+    source_list = await list_sources(submission_id, db)
+    
+    supporting = [EvidenceResponse.model_validate(e) for e in evidence_list if getattr(e, 'support_score', 0) > 0]
+    contradicting = [EvidenceResponse.model_validate(e) for e in evidence_list if getattr(e, 'contradiction_score', 0) > 0]
 
     return FullReportResponse(
         submission_id=submission_id,
@@ -306,6 +259,10 @@ async def get_report(
         image_confidence=verdict.image_confidence if verdict else None,
         summary=verdict.explanation_json.get("summary") if verdict and verdict.explanation_json else None,
         claims=[ClaimResponse.model_validate(c) for c in claims],
+        supporting_evidence=supporting,
+        contradicting_evidence=contradicting,
+        sources=[SourceResponse.model_validate(s) for s in source_list],
+        images=[],
         limitations=verdict.limitations_json or [] if verdict else [],
         score_components=verdict.score_components_json if verdict else None,
     )
