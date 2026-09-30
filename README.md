@@ -92,14 +92,15 @@ docs/         Architecture docs
 | 8. Support/Contradiction Engine | ✅ Complete |
 | 9. Source Quality Scoring + Corroboration | ✅ Complete |
 | 10. Deterministic Verdict API Report | ✅ Complete |
-| 11-16. Image Forensics Pipeline | ⬜ Pending |
+| 11. Image Preprocessing & Hashing | ✅ Complete |
+| 12-16. Advanced Image Forensics | ⬜ Pending |
 | 17. React Frontend UI | ⬜ Pending |
 
 ---
 
-## Current Pipeline Progress (Phases 1-10)
+## Current Pipeline Progress (Phases 1-11)
 
-We have successfully built the core end-to-end evidence verification pipeline! The system takes raw political claims, breaks them down, searches the web, extracts documents, scores evidence mathematically, scores source authority, and outputs a structured JSON report. 
+We have successfully built the core end-to-end evidence verification pipeline! The system can take raw political claims (text) and images, break them down, and generate a structured JSON report. 
 
 ### Tools & Technologies Used:
 1. **NLP Preprocessing & Claim Extraction**: 
@@ -117,17 +118,24 @@ We have successfully built the core end-to-end evidence verification pipeline! T
 5. **Verdict Classification Engine**:
    - Zero-Shot Natural Language Inference logic mapping to `SUPPORTS`, `CONTRADICTS`, `CONTEXT`, and `ATTRIBUTED_CLAIM`.
    - Advanced heuristic mock implemented (with fallback architectures for HuggingFace Transformers `distilbert-base-uncased-mnli`).
+6. **Image Preprocessing & Hashing (Phase 11)**:
+   - `Pillow` and `piexif` for reading EXIF camera data.
+   - `imagehash` for calculating perceptual hashes (`pHash`, `dHash`, `aHash`) to detect visually similar but edited/cropped fake images.
+   - Cryptographic `SHA-256` hashing to detect exact duplicate viral media.
 
 ---
 
 ## Example Output & Custom Queries
 
-You can test **ANY** custom query right now! The backend API is fully functional and accepts any text submission. 
+You can test **ANY** custom query or image right now! The backend API is fully functional and accepts any text/image submission. 
 
-### Method 1: Using the Test Script
-We have a python script that hits the local API. You can edit `test_api_flow.py` and replace the hardcoded `"text": "..."` string with any political claim you want to test!
+### Method 1: Using the Test Scripts
+We have python scripts that hit the local API.
+- For text: Edit `test_api_flow.py` and replace the hardcoded `"text": "..."` string with any political claim you want to test.
+- For images: Edit `test_image_flow.py` and replace the `image_path` variable with any image on your computer.
 ```bash
 python test_api_flow.py
+python test_image_flow.py
 ```
 
 ### Method 2: Interactive API Docs (Swagger UI)
@@ -135,11 +143,16 @@ Since the FastAPI server is running, you can open your browser and go to:
 http://localhost:8000/docs#/submissions/create_submission_api_submissions_post
 Click **"Try it out"**, type any claim into the `text` box, and hit execute!
 
-**What it returns:**
+**What it returns for Text:**
 1. A **Claim-vs-Evidence Matrix** scoring individual atomic sentences against scraped web sources using mathematical TF-IDF & BM25 retrieval vectors.
-2. Distinct tags highlighting if evidence **SUPPORTS**, **CONTRADICTS**, or is simply an **ATTRIBUTED_CLAIM** (e.g., merely repeating an accusation/quote rather than proving it).
+2. Distinct tags highlighting if evidence **SUPPORTS**, **CONTRADICTS**, or is simply an **ATTRIBUTED_CLAIM**.
 3. **Source Quality Scores**: Evaluation of the domains (e.g., scoring `.gov` vs a blog).
 4. A **Final Structured JSON Report** summarizing all extracted evidence, source URLs, and an overall deterministic verdict.
+
+**What it returns for Images:**
+1. **File Properties**: Extracted dimensions (width/height), mime-type, and file size.
+2. **Hashes**: `SHA-256` for cryptographic integrity, and `pHash` (Perceptual Hash) for visual similarity matching against fake-news databases.
+3. **EXIF Metadata**: Hidden camera, GPS, and timestamp data extracted directly from the raw image file.
 
 *(Note: We will build the actual webpage with a beautiful text box UI in **Phase 17**, so end-users don't have to use the API directly!)*
 

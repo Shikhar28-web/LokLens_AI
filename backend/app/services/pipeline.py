@@ -28,13 +28,62 @@ async def run_pipeline(submission_id: str, db: AsyncSession):
     result = await db.execute(stmt)
     submission = result.scalars().first()
     
-    if not submission or not submission.raw_text:
+    if not submission:
         return
         
     submission.status = "processing"
     await db.commit()
     
     try:
+        # Phase 11: Image Preprocessing
+        if submission.image_path:
+            from app.services.image_forensics.metadata_extractor import extract_image_metadata
+            from app.models.image import Image
+            from app.models.image_forensics import ImageForensics
+            import os
+            
+            meta = extract_image_metadata(submission.image_path)
+            
+            db_image = Image(
+                submission_id=submission.id,
+                original_filename=os.path.basename(submission.image_path),
+                stored_path=submission.image_path,
+                mime_type="image/jpeg",
+                file_size_bytes=meta["file_size_bytes"],
+                width=meta["width"],
+                height=meta["height"],
+                sha256_hash=meta["sha256_hash"],
+                phash=meta["phash"],
+                dhash=meta["dhash"],
+                ahash=meta["ahash"]
+            )
+            db.add(db_image)
+            await db.flush()
+            
+            db_forensics = ImageForensics(
+                image_id=db_image.id,
+                exif_json=meta["exif_json"]
+            )
+            db.add(db_forensics)
+            await db.flush()
+            
+            if not submission.raw_text:
+                verdict = Verdict(
+                    submission_id=submission.id,
+                    image_verdict="INCONCLUSIVE",
+                    overall_status="INCONCLUSIVE",
+                    explanation_json={"summary": "Image metadata extracted. Full forensics pending Phase 12."}
+                )
+                db.add(verdict)
+                submission.status = "complete"
+                await db.commit()
+                return
+
+        if not submission.raw_text:
+            submission.status = "complete"
+            await db.commit()
+            return
+            
         # 2. Text Preprocessing
         cleaned_text = normalize_text(submission.raw_text)
         

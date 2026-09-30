@@ -250,6 +250,15 @@ async def get_report(
     supporting = [EvidenceResponse.model_validate(e) for e in evidence_list if getattr(e, 'support_score', 0) > 0]
     contradicting = [EvidenceResponse.model_validate(e) for e in evidence_list if getattr(e, 'contradiction_score', 0) > 0]
 
+    from sqlalchemy.orm import selectinload
+    from app.schemas.image import ImageResponse
+    
+    images_result = await db.execute(
+        select(Image).options(selectinload(Image.forensics)).where(Image.submission_id == submission_id)
+    )
+    images = list(images_result.scalars().all())
+    images_res = [ImageResponse.model_validate(img) for img in images]
+
     return FullReportResponse(
         submission_id=submission_id,
         overall_status=verdict.overall_status if verdict else None,
@@ -262,7 +271,7 @@ async def get_report(
         supporting_evidence=supporting,
         contradicting_evidence=contradicting,
         sources=[SourceResponse.model_validate(s) for s in source_list],
-        images=[],
+        images=images_res,
         limitations=verdict.limitations_json or [] if verdict else [],
         score_components=verdict.score_components_json if verdict else None,
     )
