@@ -35,6 +35,9 @@ async def run_pipeline(submission_id: str, db: AsyncSession):
     await db.commit()
     
     try:
+        final_img_verdict = None
+        ai_likelihood_score = None
+        
         # Phase 11: Image Preprocessing
         if submission.image_path:
             from app.services.image_forensics.metadata_extractor import extract_image_metadata
@@ -67,25 +70,76 @@ async def run_pipeline(submission_id: str, db: AsyncSession):
             db.add(db_forensics)
             await db.flush()
             
-            if not submission.raw_text:
+            # Phase 12: Image Forensics
+            from app.services.image_forensics.ela_analyzer import perform_ela
+            from app.services.image_forensics.noise_analyzer import analyze_noise
+            from app.services.image_forensics.frequency_analyzer import analyze_frequency
+            from app.services.image_forensics.copy_move_detector import detect_copy_move
+            from app.services.image_forensics.ai_score_estimator import estimate_ai_likelihood
+            
+            # Run analyses (synchronously, since they are CPU bound and short)
+            ela_score = perform_ela(submission.image_path)
+            noise_score = analyze_noise(submission.image_path)
+            freq_score = analyze_frequency(submission.image_path)
+            copy_move_score = detect_copy_move(submission.image_path)
+            
+            ai_data = estimate_ai_likelihood({
+                "ela": ela_score,
+                "noise": noise_score,
+                "frequency": freq_score,
+                "copy_move": copy_move_score
+            })
+            
+            # Update DB Forensics Record
+            db_forensics.ela_score = ela_score
+            db_forensics.noise_anomaly = noise_score
+            db_forensics.frequency_anomaly = freq_score
+            db_forensics.copy_move_score = copy_move_score
+            db_forensics.ai_likelihood_score = ai_data["ai_likelihood_score"]
+            db_forensics.ai_likelihood_label = ai_data["ai_likelihood_label"].lower()
+            await db.flush()
+            
+            # Phase 13: OCR Integration
+            from app.services.ocr.ocr_engine import extract_text
+            ocr_data = extract_text(submission.image_path)
+            
+            db_image.ocr_text = ocr_data["text"]
+            db_image.ocr_confidence = ocr_data["confidence"]
+            await db.flush()
+            
+            # Map enum to proper uppercase for output
+            final_img_verdict = ai_data["ai_likelihood_label"].upper()
+            ai_likelihood_score = ai_data["ai_likelihood_score"]
+            
+            if not submission.raw_text and not db_image.ocr_text:
+                # Output final verdict
                 verdict = Verdict(
                     submission_id=submission.id,
-                    image_verdict="INCONCLUSIVE",
-                    overall_status="INCONCLUSIVE",
-                    explanation_json={"summary": "Image metadata extracted. Full forensics pending Phase 12."}
+                    image_verdict=final_img_verdict,
+                    overall_status=final_img_verdict,
+                    explanation_json={"summary": f"Image forensic analysis completed. Result: {final_img_verdict}"}
                 )
                 db.add(verdict)
                 submission.status = "complete"
                 await db.commit()
                 return
 
-        if not submission.raw_text:
+        # Use raw_text if provided, otherwise fallback to OCR text
+        text_to_process = submission.raw_text
+        if not text_to_process and submission.image_path:
+            stmt = select(Image).where(Image.submission_id == submission.id)
+            result = await db.execute(stmt)
+            db_image = result.scalars().first()
+            if db_image and db_image.ocr_text:
+                text_to_process = db_image.ocr_text
+                
+        if not text_to_process:
             submission.status = "complete"
             await db.commit()
             return
             
         # 2. Text Preprocessing
-        cleaned_text = normalize_text(submission.raw_text)
+        cleaned_text = normalize_text(text_to_process)
         
         # 3. Extract Claims
         claim_texts = extract_claims(cleaned_text)
@@ -216,10 +270,14 @@ async def run_pipeline(submission_id: str, db: AsyncSession):
             overall = "SUPPORTED"
         elif has_contradicts:
             overall = "CONTRADICTED"
+        elif not combined_text:
+            overall = "INSUFFICIENT_EVIDENCE"
             
         verdict = Verdict(
             submission_id=submission.id,
             claim_verdict=overall,
+            image_verdict=final_img_verdict,
+            image_confidence=ai_likelihood_score,
             overall_status=overall,
             explanation_json={"summary": f"The pipeline completed. Verdict: {overall}"}
         )

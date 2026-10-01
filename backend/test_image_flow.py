@@ -6,7 +6,7 @@ import time
 async def test_image_api():
     print("1. Creating image submission...")
     
-    image_path = r"C:\Users\Shikhar\.gemini\antigravity-ide\brain\7261925b-e98b-4bf6-8a30-badf2b593f6a\.user_uploaded\media_1790181676748.png"
+    image_path = r"D:\Projects\Political_lens\Mumbai Monsoon Flood News Bulletin.png"
     
     async with httpx.AsyncClient(timeout=60.0) as client:
         with open(image_path, "rb") as f:

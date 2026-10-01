@@ -36,23 +36,25 @@ def generate_queries(claim_text: str, entities: Dict[str, List[str]]) -> List[st
     if not base_query:
         base_query = claim_text
         
-    # 1. Neutral query
-    queries.append(f'"{claim_text}"') if len(claim_text.split()) < 8 else queries.append(base_query)
+    # 1. Neutral/Exact query (if short enough)
+    if len(claim_text.split()) < 8:
+        queries.append(f'"{claim_text}"')
     
-    # 2. Fact-check query
-    queries.append(f"fact check {base_query}")
+    # 2. Broad keyword query
+    queries.append(base_query)
     
-    # 3. Official response
+    # 3. Entity-focused query (who and where)
     orgs_or_persons = entities.get("orgs", []) + entities.get("persons", [])
-    if orgs_or_persons:
-        queries.append(f"{orgs_or_persons[0]} official response statement {base_query}")
-    else:
-        queries.append(f"official statement response {base_query}")
+    locations = entities.get("locations", [])
+    if orgs_or_persons or locations:
+        entity_query = " ".join(orgs_or_persons + locations)
+        queries.append(f"{entity_query} fact check")
         
-    # 4. Contradictory query
-    queries.append(f"{base_query} false fake denied hoax")
-    
-    # 5. Supporting query
-    queries.append(f"{base_query} confirmed proof reported")
+    # 4. Contextual keyword query
+    if len(primary_terms) > 3:
+        queries.append(" ".join(primary_terms[1:5]))
+        
+    # 5. News/Report query
+    queries.append(f"{primary_terms[0] if primary_terms else base_query} reported news")
 
     return list(dict.fromkeys(queries))[:5]
