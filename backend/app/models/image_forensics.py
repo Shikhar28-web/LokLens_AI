@@ -50,6 +50,9 @@ class ImageForensics(Base):
     # RGB means, std devs, histogram data, DCT stats
     stats_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
+    # ── Phase 14: pHash Web Matching results ──────────────────────────────────
+    phash_match_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+
     analyzed_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

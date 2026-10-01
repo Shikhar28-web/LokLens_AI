@@ -107,15 +107,70 @@ async def run_pipeline(submission_id: str, db: AsyncSession):
             db_image.ocr_confidence = ocr_data["confidence"]
             await db.flush()
             
-            # Map enum to proper uppercase for output
+            # Map verdict scores for use in later phases
             final_img_verdict = ai_data["ai_likelihood_label"].upper()
             ai_likelihood_score = ai_data["ai_likelihood_score"]
             
+            # Phase 14: pHash Web Matching
+            from app.services.image_forensics.phash_matcher import (
+                find_local_duplicates,
+                build_reverse_search_queries,
+                interpret_phash_result
+            )
+            
+            # Layer 1: Compare pHash against all previously processed images in DB
+            from app.models.image import Image as ImageModel
+            all_img_stmt = select(ImageModel).where(ImageModel.id != db_image.id)
+            all_img_result = await db.execute(all_img_stmt)
+            all_images = [
+                {
+                    "id": img.id,
+                    "phash": img.phash,
+                    "submission_id": img.submission_id,
+                    "created_at": img.created_at,
+                }
+                for img in all_img_result.scalars().all()
+            ]
+            
+            local_matches = find_local_duplicates(
+                current_phash=meta["phash"],
+                all_images=all_images,
+                current_image_id=db_image.id
+            )
+            
+            # Layer 2: Build reverse-image-search queries and run them
+            reverse_queries = build_reverse_search_queries(
+                ocr_text=ocr_data.get("text"),
+                phash=meta["phash"]
+            )
+            
+            web_sightings = []
+            if reverse_queries:
+                from app.services.search.ddg_provider import DDGSearchProvider
+                search_provider = DDGSearchProvider()
+                for q in reverse_queries[:2]:  # limit to 2 to avoid rate-limit
+                    try:
+                        raw_results = await search_provider.search(q, max_results=3)
+                        for r in raw_results:
+                            web_sightings.append({
+                                "query": q,
+                                "url": r.get("url", ""),
+                                "title": r.get("title", ""),
+                                "snippet": r.get("snippet", ""),
+                            })
+                    except Exception as e:
+                        logger.warning(f"Reverse image search failed for query '{q}': {e}")
+            
+            phash_result = interpret_phash_result(local_matches, web_sightings)
+            db_forensics.phash_match_json = phash_result
+            await db.flush()
+
             if not submission.raw_text and not db_image.ocr_text:
-                # Output final verdict
+                # Output final verdict (image-only submission)
                 verdict = Verdict(
                     submission_id=submission.id,
                     image_verdict=final_img_verdict,
+                    image_confidence=ai_likelihood_score,
                     overall_status=final_img_verdict,
                     explanation_json={"summary": f"Image forensic analysis completed. Result: {final_img_verdict}"}
                 )
@@ -123,6 +178,7 @@ async def run_pipeline(submission_id: str, db: AsyncSession):
                 submission.status = "complete"
                 await db.commit()
                 return
+
 
         # Use raw_text if provided, otherwise fallback to OCR text
         text_to_process = submission.raw_text

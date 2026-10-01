@@ -23,6 +23,7 @@ class ImageForensicsResponse(TruthLensBase):
     exif_json: Optional[Dict[str, Any]] = None
     forensic_features_json: Optional[Dict[str, Any]] = None
     stats_json: Optional[Dict[str, Any]] = None
+    phash_match_json: Optional[Dict[str, Any]] = None
     analyzed_at: datetime
 
 
