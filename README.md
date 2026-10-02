@@ -141,6 +141,20 @@ We have successfully built the core end-to-end evidence verification pipeline! T
    - `Pillow` and `piexif` for reading EXIF camera data.
    - `imagehash` for calculating perceptual hashes (`pHash`, `dHash`, `aHash`) to detect visually similar but edited/cropped fake images.
    - Cryptographic `SHA-256` hashing to detect exact duplicate viral media.
+7. **Image Forensics (Phase 12)**:
+   - **Error Level Analysis (ELA)**: Detects JPEG compression re-saves that indicate splicing/editing.
+   - **Noise Analysis**: Maps block-level noise variance to find spliced regions.
+   - **FFT Frequency Analysis**: Detects GAN/Diffusion model checkerboard artifacts in the frequency domain.
+   - **Copy-Move Detection**: Uses ORB feature matching to find cloned regions within an image.
+   - **AI Likelihood Scorer**: Combines all signals into a single `0.0–1.0` score with a 7-level label.
+8. **OCR Text Extraction (Phase 13)**:
+   - `Tesseract` (via `pytesseract`) with OpenCV preprocessing (grayscale, Otsu threshold).
+   - Extracted text is fed back into the text verification pipeline for claim extraction.
+9. **pHash Duplicate Matching (Phase 14)**:
+   - Compares every new image's perceptual hash against all previously processed images in the database.
+   - Detects `EXACT` matches (Hamming distance = 0) and `NEAR_DUPLICATE` matches (distance ≤ 10).
+   - Builds reverse-image-search queries from OCR text to find web sightings.
+   - Issues a `VIRAL_RECIRCULATION` verdict when the same image has been submitted multiple times.
 
 7. **Advanced Image Forensics (Phase 12)**:
    - Error Level Analysis (ELA) using `Pillow` and `numpy` to detect mismatched compression rates.

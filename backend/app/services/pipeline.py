@@ -70,18 +70,20 @@ async def run_pipeline(submission_id: str, db: AsyncSession):
             db.add(db_forensics)
             await db.flush()
             
-            # Phase 12: Image Forensics
+            # Phase 12: Image Forensics — run in thread pool to avoid blocking the async loop
             from app.services.image_forensics.ela_analyzer import perform_ela
             from app.services.image_forensics.noise_analyzer import analyze_noise
             from app.services.image_forensics.frequency_analyzer import analyze_frequency
             from app.services.image_forensics.copy_move_detector import detect_copy_move
             from app.services.image_forensics.ai_score_estimator import estimate_ai_likelihood
+            import asyncio
             
-            # Run analyses (synchronously, since they are CPU bound and short)
-            ela_score = perform_ela(submission.image_path)
-            noise_score = analyze_noise(submission.image_path)
-            freq_score = analyze_frequency(submission.image_path)
-            copy_move_score = detect_copy_move(submission.image_path)
+            ela_score, noise_score, freq_score, copy_move_score = await asyncio.gather(
+                asyncio.to_thread(perform_ela, submission.image_path),
+                asyncio.to_thread(analyze_noise, submission.image_path),
+                asyncio.to_thread(analyze_frequency, submission.image_path),
+                asyncio.to_thread(detect_copy_move, submission.image_path),
+            )
             
             ai_data = estimate_ai_likelihood({
                 "ela": ela_score,
@@ -99,9 +101,9 @@ async def run_pipeline(submission_id: str, db: AsyncSession):
             db_forensics.ai_likelihood_label = ai_data["ai_likelihood_label"].lower()
             await db.flush()
             
-            # Phase 13: OCR Integration
+            # Phase 13: OCR — also run in thread pool
             from app.services.ocr.ocr_engine import extract_text
-            ocr_data = extract_text(submission.image_path)
+            ocr_data = await asyncio.to_thread(extract_text, submission.image_path)
             
             db_image.ocr_text = ocr_data["text"]
             db_image.ocr_confidence = ocr_data["confidence"]

@@ -8,7 +8,10 @@ async def test_image_api():
     
     image_path = r"D:\Projects\Political_lens\Mumbai Monsoon Flood News Bulletin.png"
     
-    async with httpx.AsyncClient(timeout=60.0) as client:
+    # Use a very long timeout since forensics analysis + web search can take 60+ seconds
+    timeout = httpx.Timeout(120.0, connect=10.0)
+    
+    async with httpx.AsyncClient(timeout=timeout) as client:
         with open(image_path, "rb") as f:
             files = {"image": ("test_image.png", f, "image/png")}
             res = await client.post("http://localhost:8000/api/submissions", files=files)
@@ -19,14 +22,18 @@ async def test_image_api():
         print("2. Triggering analysis pipeline...")
         await client.post(f"http://localhost:8000/api/submissions/{sub_id}/analyze")
         
-        print("3. Polling for completion...")
-        for _ in range(30):
-            status_res = await client.get(f"http://localhost:8000/api/submissions/{sub_id}")
-            status = status_res.json()["status"]
-            print(f"Status: {status}")
-            if status in ["complete", "error"]:
-                break
-            await asyncio.sleep(2)
+        print("3. Polling for completion (this can take up to 2 minutes)...")
+        for i in range(60):  # poll for up to 2 minutes
+            await asyncio.sleep(3)  # wait before each poll
+            try:
+                status_res = await client.get(f"http://localhost:8000/api/submissions/{sub_id}")
+                status = status_res.json()["status"]
+                print(f"  [{i*3}s] Status: {status}")
+                if status in ["complete", "error"]:
+                    break
+            except httpx.ReadTimeout:
+                print(f"  [{i*3}s] Server busy (still processing)...")
+                continue
             
         print("4. Fetching final report...")
         report_res = await client.get(f"http://localhost:8000/api/submissions/{sub_id}/report")
@@ -35,3 +42,4 @@ async def test_image_api():
 
 if __name__ == "__main__":
     asyncio.run(test_image_api())
+
