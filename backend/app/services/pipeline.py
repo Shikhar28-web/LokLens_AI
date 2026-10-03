@@ -262,7 +262,7 @@ async def run_pipeline(submission_id: str, db: AsyncSession):
                     subject="",
                     predicate="",
                     object="",
-                    entities_json={"entities": entities, "numbers": numbers, "event_context": sc.get("event_context", "")},
+                    entities_json={"entities": entities, "numbers": numbers},
                     search_queries_json=queries,
                     # We can store claim confidence inside entities_json temporarily
                 )
@@ -294,7 +294,7 @@ async def run_pipeline(submission_id: str, db: AsyncSession):
             for c_text in claim_texts:
                 entities = extract_entities(c_text)
                 subj, pred, obj = extract_spo(c_text)
-                queries = generate_queries(c_text, entities, global_context=global_context)
+                queries = generate_queries(c_text, entities)
                 
                 # Derive intrinsic claim confidence
                 c_conf = ocr_data.get("overall_confidence", 0.5)
@@ -554,41 +554,89 @@ async def run_pipeline(submission_id: str, db: AsyncSession):
         # Determine extraction status
         extraction_status = "SUCCESS"
         if not claims:
-            overall = "INSUFFICIENT_EVIDENCE"
+            if ocr_data.get("status", "SUCCESS") == "FAILED" or not text_to_process.strip():
+                overall = "OCR_FAILED"
+                unverified.append("The image could not be read reliably enough to perform claim verification.")
+            else:
+                overall = "INSUFFICIENT_EVIDENCE"
+                unverified.append("Unable to extract a reliable factual claim from the image.")
             extraction_status = "FAILED"
-            unverified.append("Unable to extract a reliable factual claim from the image.")
         elif not has_search_results:
             overall = "UNVERIFIED"
             unverified.append("The web search failed to return any candidates for verification.")
         elif has_supports and not has_contradicts:
             overall = "SUPPORTED"
-            established.append("The retrieved evidence supports the claims made in the image/text.")
-        elif has_contradicts:
+            established.append("Reliable evidence directly supports the main claim.")
+        elif has_contradicts and not has_supports:
             overall = "CONTRADICTED"
-            disputed.append("The evidence directly contradicts the core claims, indicating fake or misleading news.")
+            disputed.append("Reliable evidence directly contradicts the main claim.")
+        elif has_contradicts and has_supports:
+            overall = "LIKELY_MISLEADING"
+            disputed.append("The available evidence indicates that the wording or context of the claim is misleading, even if part of the underlying event is real.")
         else:
-            overall = "UNVERIFIED"
-            if not has_evidence:
-                unverified.append("No reliable sources were found on the web to verify these claims.")
+            if has_evidence:
+                overall = "INSUFFICIENT_EVIDENCE"
+                unverified.append("Relevant information was found, but there is not enough evidence to establish whether the claim is true or false.")
             else:
-                unverified.append("Sources were found, but they do not explicitly support or contradict the specific claims.")
+                overall = "UNVERIFIED"
+                unverified.append("The system could not find sufficient relevant evidence to verify the claim.")
+
+        # Build explicit fallback reasoning block distinguishing Image vs Claim
+        reasoning = f"News claim assessment and Image authenticity assessment are evaluated separately.\n\n"
+        reasoning += f"News claim:\n{overall}\n\n"
+        reasoning += f"Image:\n{final_img_verdict or 'UNKNOWN'}\n\n"
+        reasoning += "Explanation:\n"
+        if overall == "SUPPORTED" and final_img_verdict in ["LIKELY_AI_GENERATED", "POSSIBLY_MANIPULATED"]:
+            reasoning += "The image itself shows characteristics associated with manipulation or AI generation, but the underlying news claim is supported by independent reliable sources. Therefore, the image assessment does not by itself invalidate the news claim."
+        elif overall in ["CONTRADICTED", "LIKELY_FALSE"] and final_img_verdict in ["LIKELY_AI_GENERATED", "POSSIBLY_MANIPULATED"]:
+            reasoning += "Multiple reliable sources contradict the central claim, and the image also shows possible manipulation indicators."
+        elif overall == "OCR_FAILED":
+            reasoning += "The image was too low quality or contained no readable text, preventing the system from verifying the claim."
+        else:
+            reasons = []
+            if established: reasons.extend(established)
+            if disputed: reasons.extend(disputed)
+            if unverified: reasons.extend(unverified)
+            if final_img_verdict == "LIKELY_AI_GENERATED":
+                reasons.append("Image forensics suggest the image is AI-generated.")
+            reasoning += " ".join(reasons)
             
-        if final_img_verdict == "LIKELY_AI_GENERATED":
-            disputed.append("Image forensics suggest the image is AI-generated.")
-            
-        if consistency_score is not None and consistency_score < 0.6:
-            disputed.append("The text in the image is not fully consistent with the content of the image or search results.")
-                
-        # Build the structured summary report
-        summary_lines = [f"Verdict: {overall}\n"]
-        if established:
-            summary_lines.append("Established Facts:\n- " + "\n- ".join(established))
-        if disputed:
-            summary_lines.append("\nDisputed / Contradicted Details:\n- " + "\n- ".join(disputed))
-        if unverified:
-            summary_lines.append("\nUnverified Information:\n- " + "\n- ".join(unverified))
-            
-        rich_summary = "\n".join(summary_lines)
+        # 16. Generate Dynamic Contextual Reason with LLM
+        evidence_texts = []
+        for c in claims:
+            if getattr(c, "_validation_status", "VALID") == "VALID":
+                for ev in getattr(c, "_temp_evidence", []):
+                    evidence_texts.append(f"Claim: {c.claim_text}\nSource ({ev['source'].domain}): {ev['evidence']}\nSupports: {ev['supports_claim']}, Contradicts: {ev['contradicts_claim']}")
+        
+        evidence_context = "\n\n".join(evidence_texts) if evidence_texts else "No reliable web evidence found."
+
+        rich_summary = reasoning
+        try:
+            from app.services.nlp.llm_client import call_llm_json
+            prompt = f"""
+You are a senior fact-checking editor. 
+Based on the following system outputs, write a concise, well-formatted final verdict summary for the user (3-5 sentences max).
+You must include:
+1. A clear statement of whether the news claims in the image are true, false, or unverified.
+2. A brief summary of the actual evidence found from the web search (mentioning key facts and domains found).
+3. A sentence acknowledging the image forensics, and explaining if the news itself commits to being real or fake despite the image.
+
+Image Forensics Verdict: {final_img_verdict or 'UNKNOWN'}
+Overall System Verdict: {overall}
+
+Evidence Found:
+{evidence_context}
+
+Output JSON:
+{{
+  "summary": "The well formatted summary paragraph."
+}}
+"""
+            res = call_llm_json(prompt)
+            if res and "summary" in res:
+                rich_summary = f"News claim assessment and Image authenticity assessment are evaluated separately.\n\nNews claim:\n{overall}\n\nImage:\n{final_img_verdict or 'UNKNOWN'}\n\nExplanation:\n{res['summary']}"
+        except Exception:
+            pass
         
         # Build comprehensive JSON Report matching user structure perfectly
         
@@ -631,7 +679,7 @@ async def run_pipeline(submission_id: str, db: AsyncSession):
             "ocr": {
                 "engine_used": ocr_data.get("engine_used", "NOT_APPLICABLE"),
                 "raw_text": ocr_data.get("raw_text", ""),
-                "cleaned_text": ocr_data.get("normalized_text", ""),
+                "cleaned_text": cleaned_text,  # Uses the fully processed NLP text
                 "overall_confidence": ocr_data.get("overall_confidence", 0.0),
                 "blocks": ocr_data.get("regions", [])
             },

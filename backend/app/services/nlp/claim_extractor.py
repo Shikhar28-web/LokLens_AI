@@ -17,35 +17,36 @@ def extract_structured_claims_llm(text: str) -> List[Dict[str, Any]]:
         return []
         
     prompt = f"""
-You are a fact-checking assistant. Process the following text (which may be raw OCR from an image).
-1. Identify the overarching EVENT CONTEXT (e.g., "Noida Sector 63 industrial warehouse fire").
-2. Extract ONLY factual, verifiable atomic claims. Do not invent claims.
-3. Every search query MUST include the overarching EVENT CONTEXT, plus specific details of the claim.
-4. Transform generic claims (e.g. "No casualties") into context-rich queries (e.g. "Noida Sector 63 warehouse fire casualties").
-5. Do NOT include OCR garbage or UI labels.
+You are a fact-checking assistant. Process the following text.
+1. Break the entire text down into small, individual sentences or logical parts. Every single sentence must be treated as a separate claim.
+2. Extract the exact text for each part. Do not invent or reword.
+3. Every search query MUST strictly be the extracted sentence itself or a direct substring of it. DO NOT append ANY external words, metadata, or context.
+4. Do NOT include OCR garbage or UI labels.
 
 Text:
 {text}
 
 Output JSON format exactly:
 {{
-  "event_context": "The overall context (locations, main event, dates)",
   "claims": [
     {{
-      "claim_text": "Atomic factual claim",
+      "claim_text": "First small sentence exactly as it appears.",
       "entities": ["entity1", "entity2"],
-      "numbers": ["150 medals", "60 gold"],
-      "search_queries": ["contextualized query 1", "contextualized query 2"]
+      "numbers": ["150", "60"],
+      "search_queries": ["exact claim substring"]
+    }},
+    {{
+      "claim_text": "Second small sentence exactly as it appears.",
+      "entities": ["entity3"],
+      "numbers": [],
+      "search_queries": ["exact claim substring"]
     }}
   ]
 }}
 """
     result = call_llm_json(prompt)
     if result:
-        claims = result.get("claims", [])
-        for c in claims:
-            c["event_context"] = result.get("event_context", "")
-        return claims
+        return result.get("claims", [])
         
     return []
 

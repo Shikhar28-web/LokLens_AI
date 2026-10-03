@@ -105,16 +105,20 @@ def build_reverse_search_queries(
     
     if ocr_text:
         # Clean and shorten OCR text for query
-        clean_text = " ".join(ocr_text.split()[:10])  # first 10 words
+        words = [w for w in ocr_text.split() if w.isalnum()]
+        if len(words) > 5:
+            clean_text = " ".join(words[:12])
+        else:
+            clean_text = " ".join(ocr_text.split()[:12])
+            
+        # Query 1: Search for the text on fact-check sites (simplified for DDG)
+        queries.append(f'{clean_text} fact check')
         
-        # Query 1: Search for this image on fact-check sites
-        queries.append(f'"{clean_text}" site:snopes.com OR site:altnews.in OR site:boomlive.in')
+        # Query 2: Search for the text as a generic query
+        queries.append(f'{clean_text} news report')
         
-        # Query 2: Search for the text on news sites
-        queries.append(f'{clean_text} image fake misleading manipulated')
-        
-        # Query 3: Reverse image search hint
-        queries.append(f'{clean_text} original source first published image')
+        # Query 3: Search for potential manipulation
+        queries.append(f'{clean_text} fake misleading')
     
     return queries[:3]
 

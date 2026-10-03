@@ -64,44 +64,10 @@ def get_preprocessing_variants(image_path: str) -> Dict[str, np.ndarray]:
 
 
 def clean_ocr_text(text: str) -> str:
-    """Robust OCR normalization layer."""
-    # Preserve key abbreviations and entities
-    # Remove common artifacts
-    text = text.replace("REAVY", "HEAVY").replace("Reavy", "Heavy")
+    """Robust OCR normalization layer. Preserves exact text as requested."""
+    # The user explicitly requested the exact text from the image without aggressive filtering.
     
-    # Normalize currency
-    text = re.sub(r'(?i)(rs\.|rs\s|rupees)', '₹', text)
-    
-    # Remove layout artifacts / tickers
-    text = re.sub(r'(?i)\b(BREAKING(?: NEWS)?|LIVE|EXCLUSIVE|UPDATE|ALERT|NEWS|TOP STORY)\b', '', text)
-    
-    # Remove social media UI boilerplate, timestamps, and view counts
-    text = re.sub(r'(?i)\b\d+(?:,\d+)*(?:\.\d+)?[KkMmBb]?\s*(?:views|likes|retweets|quotes|replies|reposts)\b', '', text)
-    text = re.sub(r'(?i)\b(?:like|retweet|reply|share|save|copy link|report)\b', '', text)
-    text = re.sub(r'\b\d{1,2}:\d{2}\s*(?:AM|PM|am|pm)?\b', '', text) # Times
-    text = re.sub(r'(?i)·\s*(?:yesterday|\d+[hmd]\s*ago)\b', '', text)
-    
-    # OCR Confusion correction based on regex/rules (O <-> 0 etc)
-    # Be careful not to destroy words.
-    
-    words = text.split()
-    cleaned = []
-    for w in words:
-        if len(w) == 1 and w.lower() not in ('a', 'i', '₹', '&', '%'): 
-            continue
-        # Reject obvious garbage
-        if len(w) > 3 and sum(c.isalpha() for c in w) < len(w) * 0.3 and not any(c.isdigit() for c in w):
-            continue
-        if re.search(r'(.)\1{3,}', w): 
-            continue # 4+ repeated chars
-            
-        # Common numbers confusion: "15O" -> "150", "6O" -> "60"
-        if re.match(r'^\d+[oO]$', w):
-            w = w[:-1] + '0'
-            
-        cleaned.append(w)
-        
-    text = " ".join(cleaned)
+    # Just basic whitespace normalization
     text = re.sub(r'\s+', ' ', text).strip()
     return text
 
@@ -231,7 +197,7 @@ def format_regions_spatially(regions: List[Dict]) -> str:
     if current_line:
         lines.append(" ".join(current_line))
             
-    return "\n".join(lines)
+    return " ".join(lines)
 
 
 def extract_text(image_path: str) -> Dict[str, Any]:

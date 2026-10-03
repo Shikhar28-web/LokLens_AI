@@ -9,67 +9,48 @@ from app.services.nlp.tokenizer import extract_keywords
 def generate_queries(claim_text: str, entities: Dict[str, List[str]], global_context: str = "") -> List[str]:
     """
     Generate multiple search queries for a given claim.
-    Creates variations to maximize retrieval recall.
+    Maintains the natural sentence structure instead of creating word salad.
     """
     if not claim_text:
         return []
 
     queries = []
     
-    # Base entities
-    core_terms = []
-    for cat in ["orgs", "persons", "locations", "concepts", "numbers"]:
-        core_terms.extend(entities.get(cat, []))
-        
-    keywords = extract_keywords(claim_text)
+    # 1. The exact claim text as a natural sentence
+    queries.append(claim_text)
     
-    # Deduplicate terms
-    primary_terms = []
-    seen_lower = set()
-    for term in core_terms + keywords:
-        lower_term = term.lower()
-        if lower_term not in seen_lower:
-            seen_lower.add(lower_term)
-            primary_terms.append(term)
+    # 2. Quoted exact search if the claim is concise
+    if len(claim_text.split()) < 10:
+        queries.append(f'"{claim_text}"')
+        
+    # 3. Meaningful NLP reduction (claim text minus stopwords, keeping order)
+    from app.services.nlp.ner import get_spacy_model
+    nlp = get_spacy_model()
+    doc = nlp(claim_text)
+    
+    meaningful_words = []
+    for token in doc:
+        if not token.is_stop and not token.is_punct and not token.is_space:
+            meaningful_words.append(token.text)
             
-    base_query = " ".join(primary_terms[:6])
-    if not base_query:
-        base_query = claim_text
-        
-    prefix = f"{global_context} " if global_context else ""
-        
-    # 1. Neutral/Exact query (if short enough)
-    if len(claim_text.split()) < 8:
-        queries.append(f'{prefix}"{claim_text}"'.strip())
-    
-    # 2. Broad keyword query
-    queries.append(f"{prefix}{base_query}".strip())
-    
-    # 3. Entity-focused query (who and where)
+    reduced_query = " ".join(meaningful_words)
+    if reduced_query and reduced_query.lower() != claim_text.lower():
+        queries.append(reduced_query)
+
+    # 4. Entity-focused natural query (Who and Where)
     orgs_or_persons = entities.get("orgs", []) + entities.get("persons", [])
     locations = entities.get("locations", [])
-    if orgs_or_persons or locations:
-        entity_query = " ".join(orgs_or_persons + locations)
-        queries.append(f"{prefix}{entity_query} fact check".strip())
-        
-    # 4. Contextual keyword query
-    if len(primary_terms) > 3:
-        queries.append(f"{prefix}{' '.join(primary_terms[1:5])}".strip())
-        
-    # 5. News/Report query
-    queries.append(f"{prefix}{primary_terms[0] if primary_terms else base_query} reported news".strip())
-    
-    # 6. Official sources queries (RBI, NPCI, ECI, IMD, BMC)
-    claim_lower = claim_text.lower()
-    if any(x in claim_lower for x in ["election", "voter", "poll", "eci"]):
-        queries.append(f"{prefix}{base_query} site:eci.gov.in".strip())
-    if any(x in claim_lower for x in ["rbi", "bank", "currency", "rupee", "note"]):
-        queries.append(f"{prefix}{base_query} site:rbi.org.in".strip())
-    if any(x in claim_lower for x in ["upi", "npci", "payment", "transaction"]):
-        queries.append(f"{prefix}{base_query} site:npci.org.in".strip())
-    if any(x in claim_lower for x in ["weather", "rain", "alert", "cyclone", "imd"]):
-        queries.append(f"{prefix}{base_query} site:mausam.imd.gov.in".strip())
-    if any(x in claim_lower for x in ["mumbai", "bmc", "civic"]):
-        queries.append(f"{prefix}{base_query} site:mcgm.gov.in".strip())
+    if orgs_or_persons and locations:
+        entity_query = f"{' '.join(orgs_or_persons)} in {' '.join(locations)}"
+        if entity_query.lower() not in [q.lower() for q in queries]:
+            queries.append(entity_query)
 
-    return list(dict.fromkeys(queries))[:5]
+    # Final deduplication
+    final_queries = []
+    seen_q = set()
+    for q in queries:
+        if q.lower() not in seen_q:
+            seen_q.add(q.lower())
+            final_queries.append(q)
+
+    return final_queries[:3]
