@@ -16,28 +16,43 @@ def estimate_ai_likelihood(scores: Dict[str, float]) -> Dict[str, Any]:
     # AI generators typically leave strong frequency anomalies, but minimal ELA anomalies.
     # Manual photoshop leaves strong ELA and noise anomalies, but lower frequency anomalies.
     
+    # Check if this is likely a screenshot/infographic (where frequency score breaks due to text)
+    # If the frequency score is extremely high but ELA and noise are negligible, it's almost certainly text/sharp edges.
+    is_text_heavy = frequency_score > 0.8 and ela_score < 0.15 and noise_score < 0.15
+    
+    if is_text_heavy:
+        return {
+            "ai_likelihood_score": None,
+            "ai_likelihood_label": "UNKNOWN",
+            "model": "rule_based_calibration"
+        }
+    
     # Weight the scores.
     # High frequency score strongly correlates with GAN/Diffusion models.
-    ai_score = (frequency_score * 0.6) + (noise_score * 0.2) + (ela_score * 0.2)
+    ai_score = (frequency_score * 0.5) + (noise_score * 0.25) + (ela_score * 0.25)
     ai_score = min(ai_score, 1.0)
     
-    # Determine label (from Verdict Engine Logic in Phase 12 plan)
+    # Determine label
     if ai_score >= 0.75:
-        label = "likely_ai_generated"
+        label = "LIKELY_AI_GENERATED"
     elif ai_score >= 0.55 or (ai_score >= 0.4 and frequency_score > 0.6):
-        label = "possibly_ai_generated"
+        label = "POSSIBLY_AI_GENERATED"
     elif ela_score >= 0.75 or copy_move_score >= 0.6:
-        label = "likely_manipulated"
+        label = "LIKELY_MANIPULATED"
     elif ela_score >= 0.6 or noise_score >= 0.6 or copy_move_score >= 0.4:
-        label = "possibly_manipulated"
+        label = "POSSIBLY_MANIPULATED"
     elif ai_score < 0.2 and ela_score < 0.2 and noise_score < 0.2 and copy_move_score < 0.2:
-        label = "likely_authentic"
+        label = "LIKELY_AUTHENTIC"
     elif ai_score < 0.35 and max(ela_score, noise_score, copy_move_score) < 0.35:
-        label = "possibly_authentic"
+        label = "POSSIBLY_AUTHENTIC"
     else:
-        label = "inconclusive"
+        label = "UNKNOWN"
+        
+    if label == "UNKNOWN":
+        ai_score = None
         
     return {
-        "ai_likelihood_score": round(ai_score, 4),
-        "ai_likelihood_label": label
+        "ai_likelihood_score": round(ai_score, 4) if ai_score is not None else None,
+        "ai_likelihood_label": label,
+        "model": "heuristic_ensemble_v1"
     }

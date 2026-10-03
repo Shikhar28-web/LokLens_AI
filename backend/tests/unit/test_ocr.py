@@ -4,7 +4,7 @@ import cv2
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
-from app.services.ocr.ocr_engine import extract_text, preprocess_for_ocr
+from app.services.ocr.ocr_engine import extract_text, get_preprocessing_variants
 
 @pytest.fixture
 def text_image_path(tmp_path):
@@ -31,19 +31,18 @@ def text_image_path(tmp_path):
     return img_path
 
 def test_preprocess_for_ocr(text_image_path):
-    processed = preprocess_for_ocr(text_image_path)
-    assert processed is not None
-    assert len(processed.shape) == 2 # Should be grayscale/binary (2D array)
+    variants = get_preprocessing_variants(text_image_path)
+    assert variants is not None
+    assert "original" in variants
 
 def test_extract_text_graceful(text_image_path):
     # This test will attempt OCR. If Tesseract is not installed, it should return gracefully
-    # with {"text": None, "confidence": 0.0} instead of crashing.
+    # with {"status": "FAILED", "error": ...} instead of crashing.
     result = extract_text(text_image_path)
     
-    assert "text" in result
-    assert "confidence" in result
-    assert isinstance(result["confidence"], float)
+    assert "status" in result
     
-    # If Tesseract IS installed and it successfully read the text
-    if result["text"] is not None:
-        assert isinstance(result["text"], str)
+    if result["status"] == "SUCCESS":
+        assert "normalized_text" in result
+        assert "overall_confidence" in result
+        assert isinstance(result["overall_confidence"], float)

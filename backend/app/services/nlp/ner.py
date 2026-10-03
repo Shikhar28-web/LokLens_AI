@@ -101,6 +101,12 @@ def extract_entities(text: str) -> Dict[str, List[str]]:
 
         if not text_val:
             continue
+            
+        # Fix: SpaCy sometimes tags "Sector XX" or similar as DATE or ORG
+        if re.search(r'(?i)\bsector\s*\d+', text_val):
+            entities["concepts"].add(text_val)
+            if label in ("DATE", "PERSON"):
+                continue # skip adding to date/person
 
         if label == "PERSON":
             # Filter out collective/generic words wrongly tagged as person
@@ -135,12 +141,17 @@ def extract_entities(text: str) -> Dict[str, List[str]]:
             entities["orgs"].discard(token.text)
             entities["persons"].discard(token.text)
             entities["locations"].add(token.text)
+            
+    # Extract ALL standalone numbers as a failsafe
+    for match in re.finditer(r'\b\d+(?:,\d+)*(?:\.\d+)?\b', text):
+        entities["numbers"].add(match.group(0))
 
     # Noun chunks heuristic to catch political objects and complete numbers
     political_kws = {
         "opposition", "ruling", "party", "voter", "electoral", "roll",
         "revision", "government", "election", "commission", "parliament",
         "assembly", "legislature", "court", "tribunal", "ministry",
+        "warehouse", "fire", "sector"
     }
 
     for chunk in doc.noun_chunks:

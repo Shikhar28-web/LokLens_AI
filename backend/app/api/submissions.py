@@ -220,11 +220,11 @@ async def list_sources(
 
 # ── Full report ────────────────────────────────────────────────────────────────
 
-@router.get("/{submission_id}/report", response_model=FullReportResponse)
+@router.get("/{submission_id}/report")
 async def get_report(
     submission_id: str,
     db: AsyncSession = Depends(get_db),
-) -> FullReportResponse:
+):
     submission = await _get_submission_or_404(submission_id, db)
 
     if submission.status != "complete":
@@ -239,42 +239,10 @@ async def get_report(
     )
     verdict = verdict_result.scalar_one_or_none()
 
-    claims_result = await db.execute(
-        select(Claim).where(Claim.submission_id == submission_id)
-    )
-    claims = list(claims_result.scalars().all())
-    
-    evidence_list = await list_evidence(submission_id, db)
-    source_list = await list_sources(submission_id, db)
-    
-    supporting = [EvidenceResponse.model_validate(e) for e in evidence_list if getattr(e, 'support_score', 0) > 0]
-    contradicting = [EvidenceResponse.model_validate(e) for e in evidence_list if getattr(e, 'contradiction_score', 0) > 0]
-
-    from sqlalchemy.orm import selectinload
-    from app.schemas.image import ImageResponse
-    
-    images_result = await db.execute(
-        select(Image).options(selectinload(Image.forensics)).where(Image.submission_id == submission_id)
-    )
-    images = list(images_result.scalars().all())
-    images_res = [ImageResponse.model_validate(img) for img in images]
-
-    return FullReportResponse(
-        submission_id=submission_id,
-        overall_status=verdict.overall_status if verdict else None,
-        claim_verdict=verdict.claim_verdict if verdict else None,
-        claim_confidence=verdict.claim_confidence if verdict else None,
-        image_verdict=verdict.image_verdict if verdict else None,
-        image_confidence=verdict.image_confidence if verdict else None,
-        summary=verdict.explanation_json.get("summary") if verdict and verdict.explanation_json else None,
-        claims=[ClaimResponse.model_validate(c) for c in claims],
-        supporting_evidence=supporting,
-        contradicting_evidence=contradicting,
-        sources=[SourceResponse.model_validate(s) for s in source_list],
-        images=images_res,
-        limitations=verdict.limitations_json or [] if verdict else [],
-        score_components=verdict.score_components_json if verdict else None,
-    )
+    if verdict and verdict.explanation_json and "full_report" in verdict.explanation_json:
+        return verdict.explanation_json["full_report"]
+        
+    return {"status": "Processing or missing report"}
 
 
 # ── Timeline ───────────────────────────────────────────────────────────────────

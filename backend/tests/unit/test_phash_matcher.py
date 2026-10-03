@@ -93,7 +93,7 @@ class TestBuildReverseSearchQueries:
 class TestInterpretPhashResult:
     def test_first_appearance_when_no_matches(self):
         result = interpret_phash_result([], [])
-        assert result["match_verdict"] == "FIRST_APPEARANCE"
+        assert result["match_verdict"] == "NO_MATCH_FOUND"
         assert result["risk_signal"] is False
         assert result["prior_sightings_count"] == 0
 

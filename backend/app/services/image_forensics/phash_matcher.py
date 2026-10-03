@@ -135,7 +135,7 @@ def interpret_phash_result(
     total = len(local_matches) + len(web_sightings)
     
     if total == 0:
-        match_verdict = "FIRST_APPEARANCE"
+        match_verdict = "NO_MATCH_FOUND"
         risk_signal = False
     elif total <= 2:
         match_verdict = "PREVIOUSLY_SEEN"

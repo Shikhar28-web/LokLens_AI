@@ -36,38 +36,15 @@ async def fetch_and_extract_article(url: str) -> Optional[dict]:
     }
 
     try:
-        # 2. Download HTML using Scrapy in a Subprocess
-        import os
-        import sys
-        import json
-        import asyncio
-        import tempfile
-        
-        with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as tmp:
-            tmp_name = tmp.name
-            
-        spider_path = os.path.join(os.path.dirname(__file__), "spider.py")
-        cmd = [sys.executable, spider_path, url, tmp_name]
-        
-        proc = await asyncio.create_subprocess_exec(*cmd)
-        await proc.wait()
-        
-        html = ""
-        with open(tmp_name, "r", encoding="utf-8") as f:
-            try:
-                data = json.load(f)
-                if data and len(data) > 0:
-                    html = data[0].get("html", "")
-            except json.JSONDecodeError:
-                pass
-                
-        if os.path.exists(tmp_name):
-            os.remove(tmp_name)
+        # 2. Download HTML using httpx
+        async with httpx.AsyncClient(headers=headers, follow_redirects=True, timeout=15.0) as client:
+            resp = await client.get(url)
+            resp.raise_for_status()
+            html = resp.text
             
         if not html:
-            logger.warning("Scrapy failed to fetch HTML from %s", url)
+            logger.warning("Empty HTML returned from %s", url)
             return None
-
         # 3. Extract content using trafilatura
         extracted = trafilatura.extract(
             html,
