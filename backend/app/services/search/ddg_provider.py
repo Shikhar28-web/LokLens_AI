@@ -8,7 +8,7 @@ import asyncio
 import logging
 from typing import Any, List
 
-from duckduckgo_search import DDGS
+from ddgs import DDGS
 
 from app.services.search.base_provider import BaseSearchProvider
 from app.services.search.cache import get_cached_results, set_cached_results
@@ -23,7 +23,7 @@ class DDGSearchProvider(BaseSearchProvider):
     def _sync_search(self, query: str, num_results: int) -> List[dict[str, Any]]:
         results = []
         with DDGS() as ddgs:
-            raw_results = ddgs.text(query, max_results=num_results)
+            raw_results = ddgs.text(query, region='us-en', safesearch='on', max_results=num_results)
             if raw_results:
                 for res in raw_results:
                     results.append({

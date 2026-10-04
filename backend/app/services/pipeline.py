@@ -155,16 +155,29 @@ async def run_pipeline(submission_id: str, db: AsyncSession):
             web_sightings = []
             if reverse_queries:
                 search_provider = DDGSearchProvider()
+                
+                # Build strict set of meaningful words (exclude tiny words, numbers, and dates)
+                import re
+                raw_words = set(w.lower() for w in ocr_data.get("normalized_text", "").split() if len(w) > 3)
+                ocr_words = set(w for w in raw_words if not w.isnumeric() and w not in ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december', 'total', 'value'])
+                
                 for q in reverse_queries[:2]:  # limit to 2 to avoid rate-limit
                     try:
                         raw_results = await search_provider.search(q, num_results=3)
                         for r in raw_results:
-                            web_sightings.append({
-                                "query": q,
-                                "url": r.get("url", ""),
-                                "title": r.get("title", ""),
-                                "snippet": r.get("snippet", ""),
-                            })
+                            # Strict relevance filter: Prevent DDG fallback spam
+                            res_text = (r.get("title", "") + " " + r.get("snippet", "")).lower()
+                            res_words = set(re.sub(r'[^\w\s]', '', w) for w in res_text.split() if len(w) > 3)
+                            
+                            # Require at least 2 highly specific overlapping words to pass
+                            overlap = ocr_words.intersection(res_words)
+                            if len(overlap) >= 2 or not ocr_words:
+                                web_sightings.append({
+                                    "query": q,
+                                    "url": r.get("url", ""),
+                                    "title": r.get("title", ""),
+                                    "snippet": r.get("snippet", ""),
+                                })
                     except Exception as e:
                         logger.warning(f"Reverse image search failed for query '{q}': {e}")
             
@@ -389,19 +402,27 @@ async def run_pipeline(submission_id: str, db: AsyncSession):
             for query in valid_queries:
                 results = await provider.search(query, num_results=3)
                 if results:
+                    claim_words = set(w.lower() for w in claim.claim_text.split() if len(w) > 3)
                     for i, res in enumerate(results):
-                        db_res = SearchResult(
-                            claim_id=claim.id,
-                            query=query,
-                            provider="duckduckgo",
-                            result_url=res["url"],
-                            title=res["title"],
-                            snippet=res.get("snippet", ""),
-                            rank=i+1
-                        )
-                        db.add(db_res)
-                        claim_results.append(res)
-                    break # just need one good set of results per claim
+                        # Strict relevance filter to prevent DDG fallback spam
+                        res_text = (res.get("title", "") + " " + res.get("snippet", "")).lower()
+                        res_words = set(w for w in res_text.split() if len(w) > 3)
+                        
+                        # Only accept if there is word overlap OR if the claim is too short
+                        if not claim_words or len(claim_words.intersection(res_words)) > 0:
+                            db_res = SearchResult(
+                                claim_id=claim.id,
+                                query=query,
+                                provider="duckduckgo",
+                                result_url=res["url"],
+                                title=res["title"],
+                                snippet=res.get("snippet", ""),
+                                rank=i+1
+                            )
+                            db.add(db_res)
+                            claim_results.append(res)
+                    if claim_results:
+                        break # just need one good set of results per claim
             
             claim._temp_results = claim_results
             
@@ -581,17 +602,74 @@ async def run_pipeline(submission_id: str, db: AsyncSession):
                 overall = "UNVERIFIED"
                 unverified.append("The system could not find sufficient relevant evidence to verify the claim.")
 
-        # Build explicit fallback reasoning block distinguishing Image vs Claim
-        reasoning = f"News claim assessment and Image authenticity assessment are evaluated separately.\n\n"
-        reasoning += f"News claim:\n{overall}\n\n"
-        reasoning += f"Image:\n{final_img_verdict or 'UNKNOWN'}\n\n"
-        reasoning += "Explanation:\n"
+        # Collect supporting and contradicting info for reasoning
+        supporting_domains = set()
+        supporting_urls = set()
+        contradicting_domains = set()
+        contradicting_urls = set()
+        
+        for c in claims:
+            if getattr(c, "_validation_status", "VALID") == "VALID":
+                for ev in getattr(c, "_temp_evidence", []):
+                    if ev.get("supports_claim"):
+                        supporting_domains.add(ev["source"].domain)
+                        if ev["source"].url:
+                            supporting_urls.add(ev["source"].url)
+                    if ev.get("contradicts_claim"):
+                        contradicting_domains.add(ev["source"].domain)
+                        if ev["source"].url:
+                            contradicting_urls.add(ev["source"].url)
+
+        supp_domain_str = ", ".join(list(supporting_domains)[:3])
+        supp_url_str = list(supporting_urls)[0] if supporting_urls else ""
+        
+        contra_domain_str = ", ".join(list(contradicting_domains)[:3])
+        contra_url_str = list(contradicting_urls)[0] if contradicting_urls else ""
+
+        # Build explicit fallback reasoning block
+        reasoning = ""
         if overall == "SUPPORTED" and final_img_verdict in ["LIKELY_AI_GENERATED", "POSSIBLY_MANIPULATED"]:
-            reasoning += "The image itself shows characteristics associated with manipulation or AI generation, but the underlying news claim is supported by independent reliable sources. Therefore, the image assessment does not by itself invalidate the news claim."
+            reason_parts = [
+                "While the image itself shows characteristics associated with manipulation or AI generation, the underlying news claim is actually supported by independent reliable sources.",
+                "The news is real, even if the image is synthetic."
+            ]
+            if supp_domain_str:
+                reason_parts.append(f"This is verified because web searches retrieved articles from authoritative domains like {supp_domain_str}.")
+            if supp_url_str:
+                reason_parts.append(f"For example, the source at {supp_url_str} contains textual evidence that directly relates to and corroborates the events described in the image.")
+            reasoning = " ".join(reason_parts)
+            
         elif overall in ["CONTRADICTED", "LIKELY_FALSE"] and final_img_verdict in ["LIKELY_AI_GENERATED", "POSSIBLY_MANIPULATED"]:
-            reasoning += "Multiple reliable sources contradict the central claim, and the image also shows possible manipulation indicators."
+            reason_parts = [
+                "This news is FAKE. Multiple reliable sources directly contradict the central claim, and the image also shows strong indicators of digital manipulation or AI generation."
+            ]
+            if contra_domain_str:
+                reason_parts.append(f"Web searches retrieved contradicting reports from domains like {contra_domain_str}.")
+            if contra_url_str:
+                reason_parts.append(f"For instance, the source at {contra_url_str} provides evidence refuting the image's claims.")
+            reasoning = " ".join(reason_parts)
+            
+        elif overall in ["CONTRADICTED", "LIKELY_FALSE"]:
+            reason_parts = [
+                "This news is FAKE. Reliable sources directly contradict the claims made in the image."
+            ]
+            if contra_domain_str:
+                reason_parts.append(f"Contradicting reports were found on domains such as {contra_domain_str}.")
+            if contra_url_str:
+                reason_parts.append(f"See {contra_url_str} for evidence refuting the claim.")
+            reasoning = " ".join(reason_parts)
+            
+        elif overall == "SUPPORTED":
+            reason_parts = [
+                "This news is REAL. Reliable evidence directly supports the main claims."
+            ]
+            if supp_domain_str:
+                reason_parts.append(f"Web searches found supporting articles from domains like {supp_domain_str}.")
+            if supp_url_str:
+                reason_parts.append(f"For example, the content at {supp_url_str} directly corroborates the claims.")
+            reasoning = " ".join(reason_parts)
         elif overall == "OCR_FAILED":
-            reasoning += "The image was too low quality or contained no readable text, preventing the system from verifying the claim."
+            reasoning = "The image was too low quality or contained no readable text, preventing the system from verifying the claim."
         else:
             reasons = []
             if established: reasons.extend(established)
@@ -599,42 +677,57 @@ async def run_pipeline(submission_id: str, db: AsyncSession):
             if unverified: reasons.extend(unverified)
             if final_img_verdict == "LIKELY_AI_GENERATED":
                 reasons.append("Image forensics suggest the image is AI-generated.")
-            reasoning += " ".join(reasons)
+            reasoning = " ".join(reasons) if reasons else "There is insufficient evidence to definitively prove if this news is real or fake."
             
         # 16. Generate Dynamic Contextual Reason with LLM
         evidence_texts = []
         for c in claims:
             if getattr(c, "_validation_status", "VALID") == "VALID":
                 for ev in getattr(c, "_temp_evidence", []):
-                    evidence_texts.append(f"Claim: {c.claim_text}\nSource ({ev['source'].domain}): {ev['evidence']}\nSupports: {ev['supports_claim']}, Contradicts: {ev['contradicts_claim']}")
+                    evidence_texts.append(
+                        f"Claim: {c.claim_text}\n"
+                        f"Source URL: {ev['source'].url}\n"
+                        f"Domain: {ev['source'].domain}\n"
+                        f"Content snippet: {ev['evidence']}\n"
+                        f"Supports Claim: {ev['supports_claim']}, Contradicts Claim: {ev['contradicts_claim']}"
+                    )
         
         evidence_context = "\n\n".join(evidence_texts) if evidence_texts else "No reliable web evidence found."
 
-        rich_summary = reasoning
+        rich_summary_data = {
+            "summary": reasoning,
+            "evidence_breakdown": []
+        }
+        
         try:
             from app.services.nlp.llm_client import call_llm_json
             prompt = f"""
-You are a senior fact-checking editor. 
-Based on the following system outputs, write a concise, well-formatted final verdict summary for the user (3-5 sentences max).
-You must include:
-1. A clear statement of whether the news claims in the image are true, false, or unverified.
-2. A brief summary of the actual evidence found from the web search (mentioning key facts and domains found).
-3. A sentence acknowledging the image forensics, and explaining if the news itself commits to being real or fake despite the image.
+You are an expert fact-checking AI.
+Based on the following system outputs, evaluate the claims and generate a structured JSON explanation.
+Your task is to synthesize the web evidence and image forensics into a cohesive, explainable verdict.
 
-Image Forensics Verdict: {final_img_verdict or 'UNKNOWN'}
-Overall System Verdict: {overall}
+Input Data:
+- Image Forensics Verdict: {final_img_verdict or 'UNKNOWN'}
+- Overall System Verdict: {overall}
 
-Evidence Found:
+Evidence Found from Web Search:
 {evidence_context}
 
-Output JSON:
+Respond EXACTLY in this JSON structure:
 {{
-  "summary": "The well formatted summary paragraph."
+  "summary": "A concise, well-written paragraph summarizing the final verdict. Include a clear statement on whether the news is real or fake, how the image forensics factor in, and what the web evidence says.",
+  "evidence_breakdown": [
+    {{
+      "domain": "The domain name of the source",
+      "url": "The full URL of the source",
+      "explanation": "How this specific source and its content relate to the claim (e.g., 'This article directly corroborates the claim that...')"
+    }}
+  ]
 }}
 """
             res = call_llm_json(prompt)
             if res and "summary" in res:
-                rich_summary = f"News claim assessment and Image authenticity assessment are evaluated separately.\n\nNews claim:\n{overall}\n\nImage:\n{final_img_verdict or 'UNKNOWN'}\n\nExplanation:\n{res['summary']}"
+                rich_summary_data = res
         except Exception:
             pass
         
@@ -698,7 +791,8 @@ Output JSON:
                 "image_verdict": final_img_verdict,
                 "overall_status": overall,
                 "confidence": 0.85 if overall in ["SUPPORTED", "CONTRADICTED"] else 0.5,
-                "reason": rich_summary
+                "reason": rich_summary_data.get("summary", reasoning),
+                "structured_reasoning": rich_summary_data
             }
         }
             
@@ -710,11 +804,12 @@ Output JSON:
             multimodal_consistency_score=consistency_score,
             overall_status=overall,
             explanation_json={
-                "summary": rich_summary,
+                "summary": rich_summary_data.get("summary", reasoning),
                 "flags": consistency_flags,
                 "extraction_status": extraction_status,
                 "multimodal_interpretation": "Analyzed spatial and textual alignment.",
-                "full_report": full_report
+                "full_report": full_report,
+                "structured_reasoning": rich_summary_data
             }
         )
         db.add(verdict)

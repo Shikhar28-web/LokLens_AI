@@ -312,6 +312,32 @@ def extract_text(image_path: str) -> Dict[str, Any]:
         grouped_text = format_regions_spatially(best_regions)
         raw_text_full = "\n".join([r["raw_text"] for r in best_regions])
         
+        # Add LLM OCR Correction to fix Tesseract hallucinations and noise
+        try:
+            from app.services.nlp.llm_client import call_llm_json
+            prompt = f"""
+You are an expert at repairing broken OCR text from Tesseract.
+The text below contains severe hallucinations, including random UI elements, charts misread as text (like 'm Bex =', 'J)', '©)'), random brackets, slashes, and numbers mixed with text.
+Your task is to heavily aggressively clean this text. 
+- Delete any fragmented gibberish.
+- Remove hallucinated symbols and meaningless equations.
+- Fix broken words into proper English sentences.
+- Only output the coherent, real text.
+
+Raw OCR Text:
+{grouped_text}
+
+Output JSON:
+{{
+  "cleaned_text": "The completely fixed and coherent English text."
+}}
+"""
+            res = call_llm_json(prompt)
+            if res and "cleaned_text" in res:
+                grouped_text = res["cleaned_text"]
+        except Exception as e:
+            logger.error(f"LLM OCR correction failed: {e}")
+        
         return {
             "status": "SUCCESS",
             "primary_engine": "PaddleOCR",

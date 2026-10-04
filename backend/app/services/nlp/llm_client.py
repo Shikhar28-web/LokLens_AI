@@ -5,18 +5,29 @@ from typing import Dict, Any, List
 
 logger = logging.getLogger(__name__)
 
-def call_llm_json(prompt: str, model: str = "gpt-4o-mini") -> Dict[str, Any]:
+def call_llm_json(prompt: str, model: str = None) -> Dict[str, Any]:
     api_key = os.getenv("OPENAI_API_KEY")
-    if not api_key:
-        logger.warning("OPENAI_API_KEY is not set. Using deterministic fallback for claim extraction.")
-        return {}
-        
+    use_ollama = os.getenv("USE_OLLAMA", "true").lower() == "true"
+    
     try:
         from openai import OpenAI
-        client = OpenAI(api_key=api_key)
         
+        if use_ollama:
+            # Connect to local Ollama via its OpenAI-compatible endpoint
+            client = OpenAI(
+                base_url='http://localhost:11434/v1',
+                api_key='ollama', # required by client, but ignored by Ollama
+            )
+            model_to_use = model or os.getenv("OLLAMA_MODEL", "llama3.1")
+        elif api_key:
+            client = OpenAI(api_key=api_key)
+            model_to_use = model or "gpt-4o-mini"
+        else:
+            logger.warning("No OPENAI_API_KEY and USE_OLLAMA is false. Returning empty.")
+            return {}
+            
         response = client.chat.completions.create(
-            model=model,
+            model=model_to_use,
             messages=[{"role": "user", "content": prompt}],
             response_format={"type": "json_object"}
         )

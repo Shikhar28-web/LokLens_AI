@@ -104,21 +104,15 @@ def build_reverse_search_queries(
     queries = []
     
     if ocr_text:
-        # Clean and shorten OCR text for query
+        # Clean OCR text for query
         words = [w for w in ocr_text.split() if w.isalnum()]
-        if len(words) > 5:
-            clean_text = " ".join(words[:12])
-        else:
-            clean_text = " ".join(ocr_text.split()[:12])
-            
-        # Query 1: Search for the text on fact-check sites (simplified for DDG)
-        queries.append(f'{clean_text} fact check')
+        clean_text = " ".join(words[:15]) if len(words) > 15 else " ".join(words)
+        
+        # Query 1: Search for the exact text snippet
+        queries.append(f'"{clean_text}"')
         
         # Query 2: Search for the text as a generic query
         queries.append(f'{clean_text} news report')
-        
-        # Query 3: Search for potential manipulation
-        queries.append(f'{clean_text} fake misleading')
     
     return queries[:3]
 
