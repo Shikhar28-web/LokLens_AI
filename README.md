@@ -39,29 +39,38 @@ LokLens AI is a comprehensive pipeline designed to verify political news claims 
 
 ## 🚦 Quick Start
 
-### 1. Setup the Backend
+### 1. Install Requirements
+First, create a virtual environment and install the required packages. You can use the root `requirements.txt` file which contains all necessary dependencies:
+
 ```bash
+# Navigate to the backend directory and create a virtual environment
 cd backend
 python -m venv venv
-.\venv\Scripts\activate          # Windows
+
+# Activate the virtual environment (Windows)
+.\venv\Scripts\activate
+
+# Go back to root and install the project requirements
+cd ..
 pip install -r requirements.txt
 ```
 
-### 2. Start Ollama for Explainable Verdicts
-Install [Ollama](https://ollama.com/) and run the Llama 3.1 model in a separate terminal:
+### 2. Start the Ollama Server
+Install [Ollama](https://ollama.com/) if you haven't already. Open a **new, separate terminal** and start the Llama 3.1 model to power the AI reasoning features:
+
 ```bash
 ollama run llama3.1
 ```
 
-### 3. Run the Server
-In your backend terminal, set the environment variables to use Ollama and start the API:
-```powershell
-$env:USE_OLLAMA="true"
-$env:OLLAMA_MODEL="llama3.1"
-uvicorn app.main:app --reload --port 8000
+### 3. Start the Backend Server
+Return to your first terminal (where the virtual environment is activated). Navigate into the `backend` folder and start the FastAPI server:
+
+```bash
+cd backend
+uvicorn app.main:app --reload
 ```
 
-Visit the interactive API docs at: http://localhost:8000/docs
+Your API is now running! Visit the interactive docs at: http://127.0.0.1:8000/docs
 
 ---
 
@@ -76,14 +85,3 @@ Visit the interactive API docs at: http://localhost:8000/docs
 
 ---
 
-## 🧪 Testing the Pipeline
-
-You can test the entire pipeline end-to-end (including the new Ollama integration) using the built-in test scripts:
-
-```bash
-# Test a raw text claim
-python test_api_flow.py
-
-# Test a fake/synthetic image containing real news
-python test_real_news_image.py
-```
