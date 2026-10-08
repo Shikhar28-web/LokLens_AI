@@ -35,7 +35,7 @@ def hamming_distance(hash1: str, hash2: str) -> int:
     try:
         h1 = imagehash.hex_to_hash(hash1)
         h2 = imagehash.hex_to_hash(hash2)
-        return h1 - h2
+        return int(h1 - h2)
     except Exception as e:
         logger.warning(f"Failed to compare hashes '{hash1}' vs '{hash2}': {e}")
         return 64  # Max distance = no match
