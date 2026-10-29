@@ -2,11 +2,26 @@
 
 import uuid
 from datetime import datetime
+from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import DateTime, Enum, Float, ForeignKey, Integer, JSON, String, func
+from sqlalchemy import JSON, DateTime, Enum, Float, ForeignKey, Integer, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
+
+if TYPE_CHECKING:
+    from app.models.submission import Submission
+
+
+class LenientEnum(Enum):
+    """Enum that gracefully returns raw string if value in database isn't in defined set."""
+
+    def _object_value_for_elem(self, elem: Any) -> Any:
+        try:
+            return self._object_lookup[elem]
+        except KeyError:
+            return elem
+
 
 CLAIM_VERDICTS = (
     "SUPPORTED",
@@ -19,9 +34,14 @@ CLAIM_VERDICTS = (
     "REAL",
     "FAKE",
     "MISLEADING",
+    "LIKELY_MISLEADING",
+    "LIKELY_FALSE",
     "UNVERIFIED",
     "EXTRACTION_FAILED",
+    "OCR_FAILED",
     "SEARCH_FAILED",
+    "PIPELINE_STUB",
+    "NO_TEXT_FOUND",
 )
 
 IMAGE_VERDICTS = (
@@ -32,6 +52,8 @@ IMAGE_VERDICTS = (
     "POSSIBLY_AI_GENERATED",
     "LIKELY_AI_GENERATED",
     "INCONCLUSIVE",
+    "UNKNOWN",
+    "NOT_APPLICABLE",
 )
 
 
@@ -51,13 +73,13 @@ class Verdict(Base):
 
     # ── Claim verdict ──────────────────────────────────────────────────────────
     claim_verdict: Mapped[str | None] = mapped_column(
-        Enum(*CLAIM_VERDICTS, name="claim_verdict_enum"), nullable=True
+        LenientEnum(*CLAIM_VERDICTS, name="claim_verdict_enum"), nullable=True
     )
     claim_confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
 
     # ── Image verdict ──────────────────────────────────────────────────────────
     image_verdict: Mapped[str | None] = mapped_column(
-        Enum(*IMAGE_VERDICTS, name="image_verdict_enum"), nullable=True
+        LenientEnum(*IMAGE_VERDICTS, name="image_verdict_enum"), nullable=True
     )
     image_confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
 
@@ -86,4 +108,4 @@ class Verdict(Base):
     )
 
     # ── Relationships ──────────────────────────────────────────────────────────
-    submission: Mapped["Submission"] = relationship(back_populates="verdict")  # noqa: F821
+    submission: Mapped["Submission"] = relationship(back_populates="verdict")

@@ -17,11 +17,13 @@ def call_llm_json(prompt: str, model: str = None) -> Dict[str, Any]:
             client = OpenAI(
                 base_url='http://localhost:11434/v1',
                 api_key='ollama', # required by client, but ignored by Ollama
+                timeout=15.0
             )
-            model_to_use = model or os.getenv("OLLAMA_MODEL", "llama3.1")
+            model_to_use = model or os.getenv("OLLAMA_MODEL", "llama3.1:latest")
         elif api_key:
-            client = OpenAI(api_key=api_key)
+            client = OpenAI(api_key=api_key, timeout=15.0)
             model_to_use = model or "gpt-4o-mini"
+
         else:
             logger.warning("No OPENAI_API_KEY and USE_OLLAMA is false. Returning empty.")
             return {}

@@ -92,3 +92,14 @@ class FullReportResponse(TruthLensBase):
     timeline: List[TimelineEventResponse] = []
     limitations: List[str] = []
     score_components: Optional[Dict[str, Any]] = None
+
+    # Enhanced search, social media & OCR analytics
+    social_media_evidence: List[Dict[str, Any]] = []
+    search_coverage: Optional[Dict[str, Any]] = None
+    image_type_detected: Optional[str] = None
+    ocr_engine_used: Optional[str] = None
+    ocr_confidence: Optional[float] = None
+    ocr: Optional[Dict[str, Any]] = None
+    forensics: Optional[Dict[str, Any]] = None
+    final: Optional[Dict[str, Any]] = None
+

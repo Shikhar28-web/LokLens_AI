@@ -22,15 +22,31 @@ class DDGSearchProvider(BaseSearchProvider):
 
     def _sync_search(self, query: str, num_results: int) -> List[dict[str, Any]]:
         results = []
-        with DDGS() as ddgs:
-            raw_results = ddgs.text(query, region='us-en', safesearch='on', max_results=num_results)
-            if raw_results:
-                for res in raw_results:
-                    results.append({
-                        "title": res.get("title", ""),
-                        "url": res.get("href", ""),
-                        "snippet": res.get("body", "")
-                    })
+        try:
+            with DDGS() as ddgs:
+                # Use worldwide region 'wt-wt' to get both international and national results
+                raw_results = ddgs.text(query, region='wt-wt', safesearch='off', max_results=num_results)
+                if raw_results:
+                    for res in raw_results:
+                        results.append({
+                            "title": res.get("title", ""),
+                            "url": res.get("href", ""),
+                            "snippet": res.get("body", "")
+                        })
+        except Exception as ex:
+            logger.warning("DDGS text search error for '%s': %s. Retrying with default region...", query, ex)
+            try:
+                with DDGS() as ddgs:
+                    raw_results = ddgs.text(query, max_results=num_results)
+                    if raw_results:
+                        for res in raw_results:
+                            results.append({
+                                "title": res.get("title", ""),
+                                "url": res.get("href", ""),
+                                "snippet": res.get("body", "")
+                            })
+            except Exception as e2:
+                logger.error("DDGS retry also failed: %s", e2)
         return results
 
     async def search(self, query: str, num_results: int = 5) -> List[dict[str, Any]]:
@@ -46,7 +62,7 @@ class DDGSearchProvider(BaseSearchProvider):
         try:
             results = await asyncio.to_thread(self._sync_search, query, num_results)
                 
-            logger.info("DDG parser found %d results", len(results))
+            logger.info("DDG parser found %d results for query '%s'", len(results), query)
             
             # 3. Cache and return
             if results:

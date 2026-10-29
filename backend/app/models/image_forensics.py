@@ -2,11 +2,25 @@
 
 import uuid
 from datetime import datetime
+from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import DateTime, Enum, Float, ForeignKey, JSON, String, func
+from sqlalchemy import JSON, DateTime, Enum, Float, ForeignKey, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
+
+if TYPE_CHECKING:
+    from app.models.image import Image
+
+
+class LenientEnum(Enum):
+    """Enum that gracefully returns raw string if value in database isn't in defined set."""
+
+    def _object_value_for_elem(self, elem: Any) -> Any:
+        try:
+            return self._object_lookup[elem]
+        except KeyError:
+            return elem
 
 
 class ImageForensics(Base):
@@ -31,12 +45,15 @@ class ImageForensics(Base):
     # ── AI-generation likelihood ───────────────────────────────────────────────
     ai_likelihood_score: Mapped[float | None] = mapped_column(Float, nullable=True)
     ai_likelihood_label: Mapped[str | None] = mapped_column(
-        Enum(
+        LenientEnum(
             "likely_authentic",
             "possibly_authentic",
             "inconclusive",
             "possibly_ai_generated",
             "likely_ai_generated",
+            "possibly_manipulated",
+            "likely_manipulated",
+            "unknown",
             name="ai_likelihood_enum",
         ),
         nullable=True,
@@ -58,4 +75,4 @@ class ImageForensics(Base):
     )
 
     # ── Relationships ──────────────────────────────────────────────────────────
-    image: Mapped["Image"] = relationship(back_populates="forensics")  # noqa: F821
+    image: Mapped["Image"] = relationship(back_populates="forensics")
