@@ -5,7 +5,7 @@
 
 import axios from "axios";
 
-const BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
+const BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:8001";
 
 export const api = axios.create({
   baseURL: `${BASE_URL}/api`,
@@ -77,6 +77,36 @@ export interface ImageForensics {
   analyzed_at: string;
 }
 
+export interface SocialMediaEvidence {
+  platform: string;
+  platform_label: string;
+  author: string;
+  post_text: string;
+  url: string;
+  relevance: string;
+  confidence: number;
+  reason?: string;
+}
+
+export interface SearchCoverage {
+  web_sources_checked: number;
+  social_sources_checked: number;
+  total_evidence_pieces: number;
+}
+
+export interface OCRReport {
+  engine_used?: string;
+  raw_text?: string;
+  processed_text?: string;
+  cleaned_text?: string;
+  overall_confidence?: number;
+  confidence_percent?: number;
+  image_type?: string;
+  word_count?: number;
+  character_count?: number;
+  blocks?: Array<Record<string, unknown>>;
+}
+
 export interface FullReport {
   submission_id: string;
   overall_status?: string;
@@ -89,6 +119,12 @@ export interface FullReport {
   supporting_evidence: Evidence[];
   contradicting_evidence: Evidence[];
   sources: Source[];
+  social_media_evidence?: SocialMediaEvidence[];
+  search_coverage?: SearchCoverage;
+  image_type_detected?: string;
+  ocr_engine_used?: string;
+  ocr_confidence?: number;
+  ocr?: OCRReport;
   independent_source_count?: number;
   duplicate_source_group_count?: number;
   timeline: Array<{ id: string; event_date?: string; event_description: string }>;

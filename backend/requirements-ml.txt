@@ -1,0 +1,29 @@
+# ── ML Training Pipeline — Additional Requirements ───────────────────────────
+# Add these to requirements.txt (or install alongside existing deps)
+# These supplement the existing requirements.txt — do not replace it.
+
+# Dataset loading
+datasets>=5.0.0
+
+# Config
+pyyaml>=6.0
+
+# Kaggle CLI (for FakeNewsNet Option A download)
+kaggle>=2.0.0
+
+# Sentence embeddings (FakeTT transcript features)
+sentence-transformers>=5.0.0
+
+# XGBoost (already listed in requirements.txt? verify)
+xgboost>=2.0.0
+
+# CLIP (via transformers — already installed)
+# openai/clip-vit-base-patch32 is loaded via transformers.CLIPModel
+
+# Audio/Video (already installed)
+# faster-whisper>=1.0.0
+# av>=9.0.0
+
+# Scipy (sparse matrices for TF-IDF + NER fusion)
+scipy>=1.11.0
+

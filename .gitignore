@@ -28,8 +28,18 @@ venv/
 backend/data/*.db
 backend/data/**/*.db
 backend/data/cache/
+data/*.db
+data/cache/
 *.db-shm
 *.db-wal
+
+# ML Datasets, Model Weights, Uploads & NLTK Data (large binaries)
+backend/data/datasets/
+backend/data/uploads/
+backend/models/
+backend/app/models_cache/
+backend/nltk_data/
+*.safetensors
 
 # IDEs
 .idea/

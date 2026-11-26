@@ -11,6 +11,16 @@ import piexif
 
 logger = logging.getLogger(__name__)
 
+# ── Known real camera makes ───────────────────────────────────────────────────
+# GAN / Diffusion models never embed real camera EXIF data; when a trusted camera
+# make is detected the image has a higher probability of being authentic.
+_KNOWN_CAMERA_MAKES = {
+    "canon", "nikon", "sony", "fujifilm", "olympus", "panasonic", "leica",
+    "samsung", "apple", "google", "huawei", "xiaomi", "oneplus", "realme",
+    "motorola", "lg", "htc", "blackberry", "kodak", "pentax", "sigma",
+    "hasselblad", "phase one", "ricoh", "casio", "gopro", "dji"
+}
+
 
 def extract_image_metadata(image_path: str) -> Dict[str, Any]:
     """
@@ -58,7 +68,8 @@ def extract_image_metadata(image_path: str) -> Dict[str, Any]:
         "phash": p_hash,
         "dhash": d_hash,
         "ahash": a_hash,
-        "exif_json": exif_data
+        "exif_json": exif_data,
+        "exif_authenticity_boost": _compute_exif_authenticity_boost(exif_data)
     }
 
 
@@ -97,3 +108,19 @@ def _extract_exif(img: Image.Image) -> Dict[str, Any]:
         logger.warning(f"Error parsing EXIF: {e}")
         
     return exif_dict
+
+
+def _compute_exif_authenticity_boost(exif_data: Dict[str, Any]) -> float:
+    """
+    Returns a negative score adjustment (-0.10) when EXIF confirms a real camera make.
+    AI-generated images never have authentic camera EXIF; this lowers their AI score.
+    Returns 0.0 if no camera make is found or if it is unrecognised.
+    """
+    make = str(exif_data.get("Make", "")).strip().lower()
+    if not make:
+        return 0.0
+    for known in _KNOWN_CAMERA_MAKES:
+        if known in make:
+            logger.debug(f"EXIF camera make '{make}' recognised — applying authenticity boost -0.10")
+            return -0.10
+    return 0.0

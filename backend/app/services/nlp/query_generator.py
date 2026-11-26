@@ -1,7 +1,7 @@
 """
 Query Generator module.
 Generates multi-perspective search engine queries from a claim and its entities,
-including direct factual searches, fact-check targeted searches, and social media scoped searches (X, Instagram, Reddit).
+including direct factual searches, fact-check targeted searches, official verifications, and social media scoped searches (X, Instagram, Reddit).
 """
 
 import re
@@ -12,10 +12,12 @@ def generate_queries(claim_text: str, entities: Dict[str, List[str]] = None, glo
     """
     Generate diverse search queries for a given claim:
     1. Core concise claim query (natural phrase)
-    2. Fact-check specific query ('<keywords> fact check')
-    3. Social media search on X/Twitter ('site:x.com OR site:twitter.com <keywords>')
-    4. Social media search on Instagram/Reddit ('site:instagram.com OR site:reddit.com <keywords>')
-    5. Entity & Temporal query (Who + What + Year)
+    2. Reduced keyword core (meaningful words only)
+    3. Entity-focused query (Who + What + Where)
+    4. Indian fact-checker targeted query (AltNews, BoomLive, PIB, etc.)
+    5. Social media search on X/Twitter
+    6. Social media search on Instagram/Reddit
+    7. Temporal query (if year detected)
     """
     if not claim_text or not claim_text.strip():
         return []
@@ -68,8 +70,12 @@ def generate_queries(claim_text: str, entities: Dict[str, List[str]] = None, glo
 
     # 4. Fact-check targeted query
     core_kw = " ".join(meaningful_words[:5]) if meaningful_words else " ".join(words[:4])
-    fact_check_query = f"{core_kw} fact check"
-    queries.append(fact_check_query)
+    queries.append(f"{core_kw} fact check")
+
+    # 4b. If Indian/Government context is detected, add official verification query
+    indian_cues = ["india", "rbi", "rupee", "₹", "modi", "government", "ministry", "pib", "diwali", "yojana", "delhi"]
+    if any(cue in clean_text.lower() for cue in indian_cues):
+        queries.append(f"{core_kw} pib fact check")
 
     # 5. Social Media Query A: X / Twitter
     # e.g., site:x.com OR site:twitter.com <keywords>
@@ -98,4 +104,4 @@ def generate_queries(claim_text: str, entities: Dict[str, List[str]] = None, glo
             seen.add(q_norm)
             final_queries.append(q.strip())
 
-    return final_queries[:5]  # Cap at 5 targeted queries (covers web, fact-checks, and social media)
+    return final_queries[:6]  # Cap at 6 targeted queries (web + Indian fact-checkers + social media)

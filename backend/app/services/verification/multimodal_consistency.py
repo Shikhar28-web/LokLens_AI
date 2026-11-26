@@ -54,6 +54,7 @@ def analyze_multimodal_consistency(
     ai_likelihood_label: Optional[str],
     noise_anomaly: Optional[float],
     ela_score: Optional[float],
+    image_path: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Produces a consistency score (0–1) and a set of flags.
@@ -63,6 +64,7 @@ def analyze_multimodal_consistency(
     """
     signals: Dict[str, Any] = {}
     score_components: List[float] = []
+    weights: List[float] = []
     flags: List[str] = []
 
     # ── 1. OCR ↔ Claim Text Overlap ─────────────────────────────────────────
@@ -86,8 +88,15 @@ def analyze_multimodal_consistency(
         signals["ocr_claim_keyword_overlap"] = None
 
     # ── 2. Date Consistency (EXIF date vs. claim dates) ─────────────────────
+    import json
     exif_year = None
-    if exif_json:
+    if isinstance(exif_json, str):
+        try:
+            exif_json = json.loads(exif_json)
+        except Exception:
+            exif_json = {}
+            
+    if isinstance(exif_json, dict):
         for field in ["DateTimeOriginal", "DateTime", "DateTimeDigitized"]:
             val = exif_json.get(field, "")
             years = _extract_years(str(val))
@@ -148,12 +157,34 @@ def analyze_multimodal_consistency(
     else:
         score_components.append(0.5)
 
-    # ── 5. Compute weighted average ──────────────────────────────────────────
-    # Weights: [OCR overlap, date, viral, ai]
-    weights = [0.35, 0.20, 0.25, 0.20]
+    # ── 5. NewsCLIPpings ML Semantic Consistency ────────────────────────────
+    # Weights for basic components: [OCR overlap (0.30), date (0.15), viral (0.20), ai (0.15)]
+    weights = [0.30, 0.15, 0.20, 0.15]
+    
+    if image_path:
+        caption_text = " ".join(claim_texts) if claim_texts else (raw_input_text or "")
+        if caption_text.strip():
+            try:
+                from ml.inference.newsclippings_inference import predict as predict_clip
+                clip_res = predict_clip(image_path=image_path, caption=caption_text.strip(), prefer="classical")
+                if clip_res.get("processing_status") == "ok":
+                    signals["newsclippings_ml"] = clip_res
+                    if clip_res["label"] == "MATCHED":
+                        clip_score = min(1.0, 0.5 + float(clip_res["confidence"]) * 0.5)
+                    else:
+                        clip_score = max(0.0, 0.5 - float(clip_res["confidence"]) * 0.5)
+                        flags.append(
+                            f"IMAGE_TEXT_MISMATCH: Multimodal CLIP model predicts image is contextually inconsistent with caption (confidence: {clip_res['confidence']:.2f})."
+                        )
+                    score_components.append(clip_score)
+                    weights.append(0.30)
+            except Exception as e:
+                logger.warning("NewsCLIPpings ML inference failed in consistency check: %s", e)
+
+    # ── 6. Compute weighted average ──────────────────────────────────────────
     if len(score_components) < len(weights):
         weights = weights[:len(score_components)]
-    total_w = sum(weights)
+    total_w = sum(weights) if sum(weights) > 0 else 1.0
     consistency_score = sum(s * w for s, w in zip(score_components, weights)) / total_w
     consistency_score = round(min(max(consistency_score, 0.0), 1.0), 4)
 

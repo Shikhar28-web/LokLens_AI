@@ -100,7 +100,8 @@ async def run_pipeline(submission_id: str, db: AsyncSession):
                 "ela": ela_score,
                 "noise": noise_score,
                 "frequency": freq_score,
-                "copy_move": copy_move_score
+                "copy_move": copy_move_score,
+                "exif_authenticity_boost": meta.get("exif_authenticity_boost", 0.0)
             })
             
             # Update DB Forensics Record
@@ -192,6 +193,7 @@ async def run_pipeline(submission_id: str, db: AsyncSession):
                 ai_likelihood_label=ai_data["ai_likelihood_label"],
                 noise_anomaly=noise_score,
                 ela_score=ela_score,
+                image_path=submission.image_path,
             )
             consistency_score = consistency_result["multimodal_consistency_score"]
             consistency_flags = consistency_result["flags"]
@@ -205,7 +207,23 @@ async def run_pipeline(submission_id: str, db: AsyncSession):
                     f"Final image authenticity determination: {final_img_verdict.replace('_', ' ')}."
                 )
                 
+                clean_phash = {
+                    "match_verdict": phash_result.get("match_verdict", "NO_MATCH_FOUND"),
+                    "prior_sightings_count": phash_result.get("prior_sightings_count", 0),
+                    "risk_signal": phash_result.get("risk_signal", False),
+                }
+
                 full_report = {
+                    "ocr": {
+                        "raw_text": ocr_data.get("raw_text", ""),
+                        "processed_text": ocr_data.get("normalized_text", ""),
+                        "overall_confidence": 0.0,
+                        "confidence_percent": 0.0,
+                        "engine_used": ocr_data.get("engine_used", "Tesseract"),
+                        "image_type": ocr_data.get("image_type", "pure_photo"),
+                        "word_count": 0,
+                        "character_count": 0
+                    },
                     "submission_id": submission.id,
                     "overall_status": final_img_verdict,
                     "claim_verdict": "NO_TEXT_FOUND",
@@ -224,10 +242,9 @@ async def run_pipeline(submission_id: str, db: AsyncSession):
                         "total_evidence_pieces": 0
                     },
                     "image_type_detected": ocr_data.get("image_type", "pure_photo"),
-                    "ocr_engine_used": ocr_data.get("engine_used", "PaddleOCR"),
+                    "ocr_engine_used": ocr_data.get("engine_used", "Tesseract"),
                     "ocr_confidence": 0.0,
                     "limitations": ["Visual-only submission without textual claims. Evaluation based purely on forensic markers."],
-                    "ocr": ocr_data,
                     "forensics": {
                         "ai_likelihood_score": ai_likelihood_score,
                         "ai_likelihood_label": final_img_verdict,
@@ -235,7 +252,7 @@ async def run_pipeline(submission_id: str, db: AsyncSession):
                         "noise_anomaly": noise_score,
                         "frequency_anomaly": freq_score,
                         "copy_move_score": copy_move_score,
-                        "phash_match": phash_result
+                        "phash_match": clean_phash
                     },
                     "final": {
                         "claim_verdict": "NO_TEXT_FOUND",
@@ -289,19 +306,35 @@ async def run_pipeline(submission_id: str, db: AsyncSession):
             return
             
         cleaned_text = normalize_text(text_to_process)
+
+        # ML Indicator: FakeNewsNet text classification
+        fakenewsnet_indicator = None
+        if cleaned_text:
+            try:
+                from ml.inference.fakenewsnet_inference import predict as predict_fakenewsnet
+                fakenewsnet_indicator = predict_fakenewsnet(cleaned_text, prefer="baseline")
+            except Exception as e:
+                logger.debug("FakeNewsNet inference skipped: %s", e)
         
         # 3. Extract Claims using LLM with deterministic fallback
         structured_claims = extract_structured_claims_llm(text_to_process)
         claims = []
         
-        if structured_claims:
+        if structured_claims and isinstance(structured_claims, list):
             for sc in structured_claims:
-                c_text = sc.get("claim_text", "").strip()
+                if isinstance(sc, str):
+                    c_text = sc.strip()
+                    entities = []
+                    numbers = []
+                elif isinstance(sc, dict):
+                    c_text = sc.get("claim_text", "").strip()
+                    entities = sc.get("entities", [])
+                    numbers = sc.get("numbers", [])
+                else:
+                    continue
+
                 if not c_text:
                     continue
-                
-                entities = sc.get("entities", [])
-                numbers = sc.get("numbers", [])
                 
                 # Generate diverse queries (core, fact-check, X, Instagram/Reddit)
                 ent_dict = {"concepts": entities}
@@ -384,7 +417,16 @@ async def run_pipeline(submission_id: str, db: AsyncSession):
             claim._validation_status = "VALID"
             valid_claims_processed += 1
             
-            queries = claim.search_queries_json or []
+            raw_queries = claim.search_queries_json or []
+            if isinstance(raw_queries, str):
+                try:
+                    import json
+                    raw_queries = json.loads(raw_queries)
+                except Exception:
+                    raw_queries = [raw_queries]
+            if not isinstance(raw_queries, list):
+                raw_queries = list(raw_queries) if hasattr(raw_queries, '__iter__') else []
+            queries = [str(q) for q in raw_queries]
             valid_queries = [q.strip() for q in queries if len(q.strip()) >= 4]
             claim.search_queries_json = valid_queries
             
@@ -457,12 +499,32 @@ async def run_pipeline(submission_id: str, db: AsyncSession):
                 stmt = select(Source).where(Source.url == url)
                 result = await db.execute(stmt)
                 db_source = result.scalars().first()
+
+                # Repair any existing source that has an invalid source_type (legacy data)
+                _VALID_SOURCE_TYPES = {
+                    "government", "official_org", "news", "academic",
+                    "research", "specialist", "blog", "social_media", "unknown"
+                }
+                _SOURCE_TYPE_REMAP = {
+                    "web": "unknown", "fact_checker": "official_org",
+                    "website": "unknown", "general": "unknown",
+                    "social": "social_media", "other": "unknown",
+                }
+                if db_source and db_source.source_type not in _VALID_SOURCE_TYPES:
+                    db_source.source_type = _SOURCE_TYPE_REMAP.get(db_source.source_type, "unknown")
+                    await db.flush()
                 
                 if not db_source:
                     quality = score_source_quality(url)
-                    source_type_val = quality.get("source_type", "web")
+                    raw_src_type = quality.get("source_type", "unknown")
                     if is_social_doc:
                         source_type_val = "social_media"
+                    elif raw_src_type in _VALID_SOURCE_TYPES:
+                        source_type_val = raw_src_type
+                    elif raw_src_type == "fact_checker":
+                        source_type_val = "official_org"
+                    else:
+                        source_type_val = "unknown"
                         
                     db_source = Source(
                         url=url,
@@ -588,8 +650,27 @@ async def run_pipeline(submission_id: str, db: AsyncSession):
             the_image = img_result.scalars().first()
             
             if the_image and the_image.forensics:
-                phash_mv = (the_image.forensics.phash_match_json or {}).get("match_verdict")
-                exif = the_image.forensics.exif_json or {}
+                import json
+                raw_pm = the_image.forensics.phash_match_json
+                if isinstance(raw_pm, str):
+                    try:
+                        raw_pm = json.loads(raw_pm)
+                    except Exception:
+                        raw_pm = {}
+                elif not isinstance(raw_pm, dict):
+                    raw_pm = {}
+                phash_mv = raw_pm.get("match_verdict")
+
+                raw_exif = the_image.forensics.exif_json
+                if isinstance(raw_exif, str):
+                    try:
+                        raw_exif = json.loads(raw_exif)
+                    except Exception:
+                        raw_exif = {}
+                elif not isinstance(raw_exif, dict):
+                    raw_exif = {}
+                exif = raw_exif
+
                 ai_label = the_image.forensics.ai_likelihood_label
                 ela = the_image.forensics.ela_score
                 noise = the_image.forensics.noise_anomaly
@@ -605,6 +686,7 @@ async def run_pipeline(submission_id: str, db: AsyncSession):
                 ai_likelihood_label=ai_label,
                 noise_anomaly=noise,
                 ela_score=ela,
+                image_path=submission.image_path,
             )
             consistency_score = consistency_result["multimodal_consistency_score"]
             consistency_flags = consistency_result["flags"]
@@ -744,6 +826,7 @@ Inputs:
 - Web Evidence:
 {evidence_context}
 
+
 - Social Media Activity (X/Twitter, Instagram, Reddit):
 {social_context_str}
 
@@ -829,26 +912,104 @@ Output JSON format strictly:
                             "created_at": ""
                         })
                     
+                has_s = any(s["supports_claim"] for s in sources_report)
+                has_c = any(s["contradicts_claim"] for s in sources_report)
+                if has_c and not has_s:
+                    c_verdict = "CONTRADICTED"
+                elif has_s and not has_c:
+                    c_verdict = "SUPPORTED"
+                elif has_c and has_s:
+                    c_verdict = "LIKELY_MISLEADING"
+                else:
+                    c_verdict = "UNVERIFIED"
+
+                raw_ent = c.entities_json
+                if isinstance(raw_ent, str):
+                    try:
+                        import json
+                        raw_ent = json.loads(raw_ent)
+                    except Exception:
+                        raw_ent = {"raw": raw_ent}
+
+                raw_sq = c.search_queries_json
+                if isinstance(raw_sq, str):
+                    try:
+                        import json
+                        raw_sq = json.loads(raw_sq)
+                    except Exception:
+                        raw_sq = [raw_sq]
+
                 claims_report.append({
                     "id": str(c.id),
                     "submission_id": str(submission.id),
                     "claim_text": c.claim_text,
-                    "entities_json": c.entities_json,
+                    "entities_json": raw_ent,
                     "claim_confidence": getattr(c, "_intrinsic_confidence", 0.6),
-                    "search_queries_json": c.search_queries_json,
+                    "search_queries_json": raw_sq,
                     "rejected_queries": all_rejected_queries,
                     "sources": sources_report,
-                    "verdict": "SUPPORTED" if any(s["supports_claim"] for s in sources_report) else ("CONTRADICTED" if any(s["contradicts_claim"] for s in sources_report) else "UNVERIFIED")
+                    "verdict": c_verdict
                 })
 
         final_summary_text = rich_summary_data.get("summary", reasoning)
         unique_sources_list = list(all_sources_dict.values())
+
+        # Real mathematical dynamic confidence calculation
+        all_ev_pieces = all_supporting_ev + all_contradicting_ev
+        if all_ev_pieces and unique_sources_list:
+            avg_source_qual = sum(s.get("quality_score", 0.75) for s in unique_sources_list) / max(len(unique_sources_list), 1)
+            avg_ev_rel = sum(e.get("relevance_score", 0.75) for e in all_ev_pieces) / max(len(all_ev_pieces), 1)
+            source_diversity_factor = min(1.0, 0.70 + 0.08 * len(unique_sources_list))
+            img_ocr_conf = ocr_data.get("overall_confidence", 0.90) if submission.image_path else 0.95
+
+            computed_verdict_confidence = (
+                0.40 * avg_source_qual +
+                0.35 * avg_ev_rel +
+                0.25 * (source_diversity_factor * 0.5 + img_ocr_conf * 0.5)
+            )
+            computed_verdict_confidence = round(min(0.97, max(0.65, computed_verdict_confidence)), 3)
+        elif overall in ["SUPPORTED", "CONTRADICTED"]:
+            computed_verdict_confidence = 0.88
+        else:
+            computed_verdict_confidence = 0.55
         
+        # Clean forensics summary without local_matches or verbose debug arrays
+        clean_phash = {}
+        if submission.image_path and phash_result:
+            if isinstance(phash_result, str):
+                try:
+                    import json
+                    phash_result = json.loads(phash_result)
+                except Exception:
+                    phash_result = {}
+            if isinstance(phash_result, dict):
+                clean_phash = {
+                    "match_verdict": phash_result.get("match_verdict", "NO_MATCH_FOUND"),
+                    "prior_sightings_count": phash_result.get("prior_sightings_count", 0),
+                    "risk_signal": phash_result.get("risk_signal", False),
+                }
+
+        raw_ocr_str = ocr_data.get("raw_text", "")
+        proc_ocr_str = ocr_data.get("normalized_text", "") or cleaned_text
+        ocr_conf_val = round(ocr_data.get("overall_confidence", 0.0), 3)
+
         full_report = {
+            # 1. OCR Extraction First (Raw Text, Processed Text, Confidence, and all values)
+            "ocr": {
+                "raw_text": raw_ocr_str,
+                "processed_text": proc_ocr_str,
+                "overall_confidence": ocr_conf_val,
+                "confidence_percent": round(ocr_conf_val * 100, 1),
+                "engine_used": ocr_data.get("engine_used", "Tesseract"),
+                "image_type": ocr_data.get("image_type", "general"),
+                "word_count": len(proc_ocr_str.split()) if proc_ocr_str else 0,
+                "character_count": len(proc_ocr_str) if proc_ocr_str else 0,
+            },
+            # 2. Verdict & Confidence
             "submission_id": submission.id,
             "overall_status": overall,
             "claim_verdict": overall,
-            "claim_confidence": 0.88 if overall in ["SUPPORTED", "CONTRADICTED"] else 0.55,
+            "claim_confidence": computed_verdict_confidence,
             "image_verdict": final_img_verdict,
             "image_confidence": ai_likelihood_score,
             "summary": final_summary_text,
@@ -863,34 +1024,26 @@ Output JSON format strictly:
                 "total_evidence_pieces": len(all_supporting_ev) + len(all_contradicting_ev)
             },
             "image_type_detected": ocr_data.get("image_type", "general"),
-            "ocr_engine_used": ocr_data.get("engine_used", "PaddleOCR"),
-            "ocr_confidence": ocr_data.get("overall_confidence", 0.0),
+            "ocr_engine_used": ocr_data.get("engine_used", "Tesseract"),
+            "ocr_confidence": ocr_conf_val,
             "independent_source_count": len(unique_sources_list),
-            "timeline": [],
             "limitations": [
                 "Analysis reflects public web search, fact-check, and social media records indexed at verification time."
             ],
-            "ocr": {
-                "engine_used": ocr_data.get("engine_used", "PaddleOCR"),
-                "raw_text": ocr_data.get("raw_text", ""),
-                "cleaned_text": cleaned_text,
-                "overall_confidence": ocr_data.get("overall_confidence", 0.0),
-                "blocks": ocr_data.get("regions", [])
-            },
             "forensics": {
                 "ai_likelihood_score": ai_likelihood_score,
                 "ai_likelihood_label": final_img_verdict or "UNKNOWN",
-                "ela_score": ela_score if submission.image_path else None,
-                "noise_anomaly": noise_score if submission.image_path else None,
-                "frequency_anomaly": freq_score if submission.image_path else None,
-                "copy_move_score": copy_move_score if submission.image_path else None,
-                "phash_match": phash_result if submission.image_path else {}
+                "ela_score": round(ela_score, 3) if (submission.image_path and ela_score is not None) else None,
+                "noise_anomaly": round(noise_score, 3) if (submission.image_path and noise_score is not None) else None,
+                "frequency_anomaly": round(freq_score, 3) if (submission.image_path and freq_score is not None) else None,
+                "copy_move_score": round(copy_move_score, 3) if (submission.image_path and copy_move_score is not None) else None,
+                "phash_match": clean_phash
             },
             "final": {
                 "claim_verdict": overall,
                 "image_verdict": final_img_verdict,
                 "overall_status": overall,
-                "confidence": 0.88 if overall in ["SUPPORTED", "CONTRADICTED"] else 0.55,
+                "confidence": computed_verdict_confidence,
                 "reason": final_summary_text,
                 "structured_reasoning": rich_summary_data
             }
@@ -909,7 +1062,8 @@ Output JSON format strictly:
                 "extraction_status": extraction_status,
                 "social_media_evidence": social_media_evidence,
                 "full_report": full_report,
-                "structured_reasoning": rich_summary_data
+                "structured_reasoning": rich_summary_data,
+                "fakenewsnet_indicator": fakenewsnet_indicator,
             }
         )
         db.add(verdict)
@@ -941,7 +1095,9 @@ Output JSON format strictly:
         logger.info(f"Pipeline completed successfully for submission {submission.id}")
         
     except Exception as e:
-        logger.error(f"Pipeline error for submission {submission_id}: {e}", exc_info=True)
+        import traceback
+        tb_str = traceback.format_exc()
+        logger.error(f"Pipeline error for submission {submission_id}: {e}\n{tb_str}")
         submission.status = "error"
-        submission.error_message = str(e)
+        submission.error_message = f"{str(e)} | TRACEBACK: {tb_str}"
         await db.commit()

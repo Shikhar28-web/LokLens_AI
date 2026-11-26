@@ -153,6 +153,4 @@ def interpret_phash_result(
         "earliest_local_match": earliest,
         "match_verdict": match_verdict,
         "risk_signal": risk_signal,
-        "local_matches": local_matches,
-        "web_sightings": web_sightings,
     }

@@ -52,39 +52,45 @@ def normalize_text(text: str) -> str:
     for pattern, replacement in contractions.items():
         text = re.sub(pattern, replacement, text, flags=re.IGNORECASE)
 
-    # 7. Remove duplicate characters (3 or more reduced to 2)
+    # 7. Remove duplicate characters for letters (3 or more reduced to 2, preserving ellipsis '...')
     # e.g., 'soooo' -> 'soo'
-    text = re.sub(r'(.)\1{2,}', r'\1\1', text)
+    text = re.sub(r'([a-zA-Z])\1{2,}', r'\1\1', text)
 
-    # 8. Filter OCR garbage (isolated punctuation, strange single chars)
-    words = text.split()
-    cleaned_words = []
-    for w in words:
-        # Strip isolated punctuation chunks (e.g. "/", ",.", "=", "\\")
-        if all(not c.isalnum() for c in w) and w not in ('%', '$', '₹', '€', '£', '+', '-'):
-            continue
-            
-        # Strip strange single characters (e.g. "m", "g", "j") - keep valid ones
-        if len(w) == 1 and w.isalpha() and w.lower() not in ('a', 'i'):
-            continue
-            
-        # Strip weird camelCase words that look like OCR noise (e.g. "sNel", "Bex")
-        # unless they are common entities (hard to know, so be cautious).
-        # We will just strip purely numeric-symbol mashups that don't make sense
-        if len(w) > 3 and not any(c.isalpha() or c.isdigit() for c in w):
-            continue
-            
-        cleaned_words.append(w)
+    # 8. Filter OCR garbage line-by-line to preserve linebreaks
+    lines = text.split('\n')
+    cleaned_lines = []
+    for line in lines:
+        words = line.split(' ')
+        cleaned_words = []
+        for w in words:
+            if not w:
+                continue
+            # Strip isolated punctuation chunks (e.g. "/", ",.", "=", "\\")
+            if all(not c.isalnum() for c in w) and w not in ('%', '$', '₹', '€', '£', '+', '-', '...', '..'):
+                continue
+                
+            # Strip strange single characters (e.g. "m", "g", "j") - keep valid ones
+            if len(w) == 1 and w.isalpha() and w.lower() not in ('a', 'i'):
+                continue
+                
+            # Strip weird purely numeric-symbol mashups
+            if len(w) > 3 and not any(c.isalpha() or c.isdigit() for c in w):
+                continue
+                
+            cleaned_words.append(w)
+        cleaned_lines.append(" ".join(cleaned_words))
         
-    text = " ".join(cleaned_words)
+    text = "\n".join(cleaned_lines)
 
-    # 9. Handle literal \n strings
-    text = text.replace('\\n', ' ')
-    text = text.replace('\n', ' ')
-    
-    # 10. Collapse all newlines, tabs, and spaces into a single space
-    text = re.sub(r'[\n\r\t]+', ' ', text)
-    text = re.sub(r'[ ]+', ' ', text)
+    # 9. Handle literal \n strings (escaped newline sequences in JSON/strings)
+    text = text.replace('\\n', '\n')
+
+    # 10. Collapse 3+ consecutive newlines to double newline (preserve paragraph breaks),
+    #     then collapse multiple spaces on a single line, then strip.
+    text = re.sub(r'\r\n', '\n', text)          # normalize Windows line endings
+    text = re.sub(r'\n{3,}', '\n\n', text)      # preserve paragraph structure (≤2 newlines)
+    text = re.sub(r'[ \t]+', ' ', text)         # collapse horizontal whitespace only
+    text = re.sub(r'\n ', '\n', text)           # remove leading spaces after newline
     text = text.strip()
 
     # 11. Context-aware OCR Spelling Correction (LLM)

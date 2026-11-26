@@ -8,11 +8,11 @@ export default defineConfig({
     proxy: {
       // Proxy /api calls to FastAPI backend during development
       "/api": {
-        target: "http://localhost:8000",
+        target: "http://localhost:8001",
         changeOrigin: true,
       },
       "/health": {
-        target: "http://localhost:8000",
+        target: "http://localhost:8001",
         changeOrigin: true,
       },
     },

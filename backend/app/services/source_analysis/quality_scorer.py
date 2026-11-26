@@ -23,7 +23,7 @@ def score_source_quality(url: str) -> dict:
         "factcheck.org", "pib.gov.in", "vishvasnews.com", "thip.media", "newschecker.in"
     ]
     if any(fc in domain for fc in fact_checkers):
-        return {"authority_score": 0.95, "source_type": "fact_checker", "platform": "fact_check"}
+        return {"authority_score": 0.95, "source_type": "official_org", "platform": "fact_check"}
 
     # High authority government & academic
     if domain.endswith(".gov") or domain.endswith(".gov.in") or domain.endswith(".nic.in") or domain.endswith(".edu"):
@@ -62,5 +62,5 @@ def score_source_quality(url: str) -> dict:
             }
         
     # Default generic web source
-    return {"authority_score": 0.55, "source_type": "web", "platform": "web"}
+    return {"authority_score": 0.55, "source_type": "unknown", "platform": "web"}
 

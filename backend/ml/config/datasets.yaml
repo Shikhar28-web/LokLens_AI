@@ -1,0 +1,78 @@
+# ============================================================
+# LokLens AI — Dataset Configuration
+# Change paths here; never hardcode them in training scripts.
+# ============================================================
+
+datasets:
+  fever:
+    huggingface_name: "fever"
+    huggingface_config: "v1.0"
+    local_cache_dir: "./data/datasets/fever"
+    nli_variant: "pietrolesci/nli_fever"   # flat NLI version (fallback / baseline)
+    splits:
+      train: "train"
+      val: "paper_dev"
+      test: "paper_test"
+
+  fakenewsnet:
+    # Option A: Kaggle pre-processed snapshot (recommended — no API key needed)
+    source: "kaggle"
+    kaggle_dataset: "algord/fake-news"     # article text + labels, no Twitter needed
+    local_dir: "./data/datasets/fakenewsnet"
+    politifact_subdir: "politifact"
+    gossipcop_subdir: "gossipcop"
+    text_col: "text"
+    label_col: "label"                     # 0=REAL, 1=FAKE
+    # Option B (manual): set source: "local" and provide csv files below
+    # local_csv_fake: "./data/datasets/fakenewsnet/fake.csv"
+    # local_csv_real: "./data/datasets/fakenewsnet/real.csv"
+
+  newsclippings:
+    repo_url: "https://github.com/g-luo/news_clippings.git"
+    local_dir: "./data/datasets/newsclippings"
+    # Option A (default): precomputed CLIP embeddings — no raw images needed
+    use_precomputed_embeddings: true
+    embeddings_dir: "./data/datasets/newsclippings/embeddings"
+    annotations_dir: "./data/datasets/newsclippings/news_clippings/data"
+    # Option B: raw VisualNews images (place in visual_news/ after manual request)
+    visual_news_dir: "./data/datasets/visual_news"
+
+training:
+  seed: 42
+  device: "auto"               # "auto" → GPU if available, else CPU
+  num_workers: 4
+
+  fever:
+    batch_size: 32
+    max_seq_len: 512
+    lr: 2.0e-5
+    epochs: 3
+    warmup_ratio: 0.1
+    model_name: "cross-encoder/nli-deberta-v3-small"
+    baseline_model: "logistic_regression"
+    output_dir: "./models/fever_claim_verifier"
+
+  fakenewsnet:
+    batch_size: 16
+    max_seq_len: 512
+    lr: 2.0e-5
+    epochs: 4
+    model_name: "distilbert-base-uncased"
+    baseline_models:
+      - logistic_regression
+      - naive_bayes
+      - random_forest
+      - xgboost
+    output_dir: "./models/fakenewsnet_classifier"
+
+  newsclippings:
+    clip_model: "openai/clip-vit-base-patch32"
+    batch_size: 256
+    classifier_models:
+      - logistic_regression
+      - random_forest
+      - xgboost
+      - mlp
+    mlp_hidden: [512, 256]
+    output_dir: "./models/newsclippings_image_text"
+
